@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.refinement_loop.types import (
+    AcceptedMission,
+    AcceptedPlan,
+    LandingAssessment,
+    LunarSource,
+    PlanHypothesis,
+    PlausiblyExplainsFeedback,
+    RefineTrajectory,
+    SafeUnderModel,
+    TrajectoryRefinementState,
+)
+from prism.reasoning.methods.abductive import Abductive
+from prism.reasoning.methods.deductive import DeductionInput, Deductive
+
+relation SupportTrajectoryHypothesis(
+    source: LunarSource,
+    target: AcceptedPlan,
+) |~ PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value)
+
+reasoning LunarLandingRefinement(
+    source: LunarSource,
+) -> Validated[
+    value: Computed[PlanHypothesis],
+    SafeUnderModel(value),
+]:
+    sequence:
+        repeat refinement_policy(10, until = finding.accepted):
+            [candidate: Abductive[
+                AcceptedPlan,
+                AcceptedMission,
+                Evidence[PlanHypothesis],
+            ](source)] by SupportTrajectoryHypothesis
+            [finding: Deductive[
+                LandingAssessment,
+                AcceptedPlan,
+            ](DeductionInput(context = candidate))]
+            [source: RefineTrajectory(TrajectoryRefinementState(
+                candidate = candidate,
+                finding = finding,
+                source = source,
+            ))]
+        [safe_plan: Deductive[
+            Validated[
+                value: Computed[PlanHypothesis],
+                SafeUnderModel(value),
+            ],
+            LandingAssessment,
+        ](DeductionInput(context = finding))]
+    return safe_plan

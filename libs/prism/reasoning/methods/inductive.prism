@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+type InductionInput[Dataset, Population]:
+    dataset: Dataset
+    population: Population
+
+type Inductive[Conclusion, Dataset, Population] = (
+    source: InductionInput[Dataset, Population],
+) -> Conclusion

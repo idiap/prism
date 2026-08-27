@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "prism-stdlib"
+version = "1.0.0"
+readme = "README.md"
+description = "Standard functions, workflows, reasoning methods, and proof-carrying relation certificates for Prism."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = ["prism-language==1.0.0", "prism-runtime==1.0.0"]
+[project.entry-points."prism.modules"]
+stdlib = "prism_stdlib:module_root"
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.setuptools.data-files]
+"prism_modules/libs/prism/functions" = ["functions/*.prism"]
+"prism_modules/libs/prism/reasoning" = ["reasoning/*.prism"]
+"prism_modules/libs/prism/reasoning/methods" = ["reasoning/methods/*.prism"]

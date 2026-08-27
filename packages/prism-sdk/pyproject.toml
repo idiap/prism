@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-sdk"
+version = "1.0.0"
+readme = "README.md"
+description = "Workspace, package-discovery, and optional runtime integration helpers for Prism."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = ["prism-language==1.0.0", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+runtime = ["prism-runtime==1.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prism.sdk*"]
+namespaces = true

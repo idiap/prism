@@ -1,0 +1,225 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+import examples.language.refinement_loop.types as types
+from prism.reasoning.methods.deductive import DeductionInput
+
+def advance_state(
+    state: types.LanderState,
+    burn: types.Burn,
+    mission: types.MissionConstraints,
+) -> types.LanderState:
+    duration = burn.duration_seconds
+    mass = mission.dry_mass + state.fuel
+    thrust_acceleration = mission.max_thrust / mass * burn.throttle
+    lateral_fraction = burn.angle_degrees / 90.0
+    ax = thrust_acceleration * lateral_fraction
+    ay = (
+        thrust_acceleration * (1.0 - lateral_fraction)
+        - mission.lunar_gravity
+    )
+    return types.LanderState(
+        x = state.x + state.vx * duration + 0.5 * ax * duration * duration,
+        altitude = (
+            state.altitude
+            + state.vy * duration
+            + 0.5 * ay * duration * duration
+        ),
+        vx = state.vx + ax * duration,
+        vy = state.vy + ay * duration,
+        fuel = state.fuel - duration * burn.throttle * mission.fuel_burn_rate,
+    )
+
+def simulate_trajectory(
+    plan: types.PlanHypothesis,
+) -> Computed[types.TrajectoryBounds]:
+    mission = plan.mission
+    initial = types.LanderState(
+        x = mission.initial_x,
+        altitude = mission.initial_altitude,
+        vx = mission.initial_vx,
+        vy = mission.initial_vy,
+        fuel = mission.initial_fuel,
+    )
+    after_coast = advance_state(initial, plan.coast, mission)
+    after_braking = advance_state(after_coast, plan.braking, mission)
+    before_terminal = advance_state(after_braking, plan.descent, mission)
+    touchdown = advance_state(before_terminal, plan.terminal, mission)
+    trajectory = types.TrajectoryBounds(
+        touchdown_x = touchdown.x,
+        touchdown_altitude = touchdown.altitude,
+        touchdown_vx = touchdown.vx,
+        touchdown_vy = touchdown.vy,
+        touchdown_angle = plan.terminal.angle_degrees,
+        fuel_remaining = touchdown.fuel,
+        preterminal_clearance_lower_bound = before_terminal.altitude,
+        terminal_entry_vy_upper_bound = before_terminal.vy,
+        peak_thrust_upper_bound = mission.max_thrust,
+    )
+    return compute(trajectory, procedure = "lunar-trajectory-integrator-v1")
+
+def check_constraints(
+    trajectory: Computed[types.TrajectoryBounds],
+    mission: types.MissionConstraints,
+) -> Computed[types.ConstraintChecks]:
+    bounds = trajectory.value
+    checks = types.ConstraintChecks(
+        inside_landing_zone = (
+            bounds.touchdown_x >= mission.landing_zone_min_x
+            and bounds.touchdown_x <= mission.landing_zone_max_x
+        ),
+        horizontal_speed_safe = (
+            bounds.touchdown_vx > -mission.max_horizontal_speed
+            and bounds.touchdown_vx < mission.max_horizontal_speed
+        ),
+        vertical_speed_safe = bounds.touchdown_vy > mission.min_vertical_speed,
+        touchdown_altitude_safe = (
+            bounds.touchdown_altitude >= 0.0
+            and bounds.touchdown_altitude < mission.touchdown_altitude_tolerance
+        ),
+        attitude_safe = bounds.touchdown_angle < mission.max_lander_angle,
+        fuel_reserve_safe = bounds.fuel_remaining > mission.fuel_reserve,
+        terrain_clearance_safe = (
+            bounds.preterminal_clearance_lower_bound > 0.0
+            and bounds.terminal_entry_vy_upper_bound < 0.0
+            and bounds.touchdown_vy < 0.0
+        ),
+        engine_limit_safe = bounds.peak_thrust_upper_bound <= mission.max_thrust,
+        fuel_nonnegative = bounds.fuel_remaining >= 0.0,
+    )
+    return compute(checks, procedure = "lunar-constraint-checker-v1")
+
+def build_landing_assessment(
+    plan: types.AcceptedPlan,
+    trajectory: Computed[types.TrajectoryBounds],
+    checks: Computed[types.ConstraintChecks],
+) -> types.LandingAssessment:
+    hypothesis = plan.value.value
+    bounds = trajectory.value
+    constraint_checks = checks.value
+    accepted = (
+        constraint_checks.inside_landing_zone
+        and constraint_checks.horizontal_speed_safe
+        and constraint_checks.vertical_speed_safe
+        and constraint_checks.touchdown_altitude_safe
+        and constraint_checks.attitude_safe
+        and constraint_checks.fuel_reserve_safe
+        and constraint_checks.terrain_clearance_safe
+        and constraint_checks.engine_limit_safe
+        and constraint_checks.fuel_nonnegative
+    )
+    return types.LandingAssessment(
+        plan = plan,
+        trajectory = trajectory,
+        checks = checks,
+        accepted = accepted,
+        counterexample = types.Counterexample(
+            active = not accepted,
+            assessment_time = (
+                hypothesis.coast.duration_seconds
+                + hypothesis.braking.duration_seconds
+                + hypothesis.descent.duration_seconds
+                + hypothesis.terminal.duration_seconds
+            ),
+            constraints = [
+                types.ConstraintResult(
+                    constraint = "landing-zone",
+                    satisfied = constraint_checks.inside_landing_zone,
+                    observed_value = bounds.touchdown_x,
+                    required_condition = "configured minimum x <= touchdown x <= configured maximum x",
+                ),
+                types.ConstraintResult(
+                    constraint = "horizontal-speed",
+                    satisfied = constraint_checks.horizontal_speed_safe,
+                    observed_value = bounds.touchdown_vx,
+                    required_condition = "absolute touchdown horizontal speed below the configured maximum",
+                ),
+                types.ConstraintResult(
+                    constraint = "vertical-speed",
+                    satisfied = constraint_checks.vertical_speed_safe,
+                    observed_value = bounds.touchdown_vy,
+                    required_condition = "touchdown vertical speed above the configured minimum",
+                ),
+                types.ConstraintResult(
+                    constraint = "touchdown-altitude",
+                    satisfied = constraint_checks.touchdown_altitude_safe,
+                    observed_value = bounds.touchdown_altitude,
+                    required_condition = "0 <= touchdown altitude < configured tolerance",
+                ),
+                types.ConstraintResult(
+                    constraint = "attitude",
+                    satisfied = constraint_checks.attitude_safe,
+                    observed_value = bounds.touchdown_angle,
+                    required_condition = "touchdown angle below the configured maximum",
+                ),
+                types.ConstraintResult(
+                    constraint = "fuel-reserve",
+                    satisfied = constraint_checks.fuel_reserve_safe,
+                    observed_value = bounds.fuel_remaining,
+                    required_condition = "remaining fuel above the configured reserve",
+                ),
+                types.ConstraintResult(
+                    constraint = "preterminal-clearance",
+                    satisfied = bounds.preterminal_clearance_lower_bound > 0.0,
+                    observed_value = bounds.preterminal_clearance_lower_bound,
+                    required_condition = "preterminal clearance above zero",
+                ),
+                types.ConstraintResult(
+                    constraint = "terminal-entry-descent",
+                    satisfied = bounds.terminal_entry_vy_upper_bound < 0.0,
+                    observed_value = bounds.terminal_entry_vy_upper_bound,
+                    required_condition = "terminal entry vertical speed below zero",
+                ),
+                types.ConstraintResult(
+                    constraint = "touchdown-descent",
+                    satisfied = bounds.touchdown_vy < 0.0,
+                    observed_value = bounds.touchdown_vy,
+                    required_condition = "touchdown vertical speed below zero",
+                ),
+                types.ConstraintResult(
+                    constraint = "engine-limit",
+                    satisfied = constraint_checks.engine_limit_safe,
+                    observed_value = bounds.peak_thrust_upper_bound,
+                    required_condition = "peak thrust at or below the configured maximum",
+                ),
+                types.ConstraintResult(
+                    constraint = "fuel-nonnegative",
+                    satisfied = constraint_checks.fuel_nonnegative,
+                    observed_value = bounds.fuel_remaining,
+                    required_condition = "remaining fuel at or above zero",
+                ),
+            ],
+        ),
+    )
+
+def check_trajectory(
+    source: DeductionInput[types.AcceptedPlan],
+) -> types.LandingAssessment:
+    hypothesis = source.context.value.value
+    trajectory = simulate_trajectory(hypothesis)
+    checks = check_constraints(trajectory, hypothesis.mission)
+    return build_landing_assessment(
+        source.context,
+        trajectory,
+        checks,
+    )
+
+def validate_safe_plan(
+    source: DeductionInput[types.LandingAssessment],
+) -> Result[
+    Validated[
+        value: Computed[types.PlanHypothesis],
+        types.SafeUnderModel(value),
+    ],
+    types.LunarLandingError,
+]:
+    computed = source.context.plan.value
+    return validate[
+        types.SafeUnderModel(computed)
+    ](
+        computed,
+        validator = "lunar-lander-simulator-v1",
+        require = [source.context.accepted],
+    )

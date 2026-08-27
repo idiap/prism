@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-transpiler"
+version = "1.0.0"
+readme = "README.md"
+description = "Build Open Agent Skills and Codex or Claude hooks into checked, standalone Prism modules."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = [
+  "prism-language==1.0.0",
+  "PyYAML>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prism.transpiler*"]
+namespaces = true

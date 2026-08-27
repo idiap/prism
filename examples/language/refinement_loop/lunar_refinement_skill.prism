@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.refinement_loop.types import ExplainRefinement
+
+lunar_refinement_narrator_skill: Skill[ExplainRefinement] = skill_artifact[ExplainRefinement](
+    "lunar-refinement-narrator",
+    "1.0.0",
+    "lunar-refinement-narrator",
+    "Explain a simulator-guided lunar landing refinement using only typed mission data, feedback, and proposed controls.",
+    "# Lunar refinement narrator\n\nProduce the `PlanNarrative` for the supplied `ExplainRefinement` task.\n\n- Inspect every feedback constraint whose `satisfied` field is false.\n- Ground the strategy in the supplied observed values and required conditions.\n- Explain how the proposed coast, braking, descent, and terminal burns address those failures.\n- Mention a fuel, velocity, clearance, or attitude trade-off when it is relevant.\n- Treat the proposed burn controls as immutable. Do not invent or modify numerical controls.\n- Do not claim that the proposed plan is safe, accepted, or converged before simulator validation.\n- If feedback is inactive, describe the proposed controls as an initial simulation candidate.\n- Return only the requested structured `PlanNarrative`, with a concise `strategy`.",
+    "{}",
+)

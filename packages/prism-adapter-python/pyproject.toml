@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-adapter-python"
+version = "1.0.0"
+readme = "README.md"
+description = "Typed Python.Call effect handler for Prism backed by Python entry points."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = ["prism-runtime==1.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prism.adapters.python*"]
+namespaces = true

@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-lsp"
+version = "1.0.0"
+readme = "README.md"
+description = "Language server and workbench tooling for Prism source programs."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = ["prism-language==1.0.0", "prism-sdk==1.0.0", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+workbench = ["prism-runtime==1.0.0", "prism-adapter-litellm==1.0.0", "prism-adapter-python==1.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prism.tooling.lsp*", "prism.tooling.protocol*", "prism.tooling.ide_server*", "prism.tooling.workbench*"]
+namespaces = true

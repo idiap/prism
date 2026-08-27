@@ -1,0 +1,146 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[project]
+name = "prism-solver"
+version = "1.0.0"
+description = "Agentic reasoning programming language for typed, proof-carrying AI workflows."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "bandit[toml]>=1.8.6",
+  "pre-commit>=4.3.0",
+  "pyright>=1.1.411",
+  "pytest>=8.0",
+  "pytest-xdist>=3.8.0",
+  "reuse>=6.2.0",
+  "ruff>=0.16.0",
+  "vulture>=2.16",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[tool.uv.workspace]
+members = [
+  "packages/prism-language",
+  "packages/prism-transpiler",
+  "packages/prism-runtime",
+  "packages/prism-sdk",
+  "packages/prism-adapter-codex",
+  "packages/prism-adapter-litellm",
+  "packages/prism-adapter-python",
+  "packages/prism-platform",
+  "packages/prism-cli",
+  "packages/prism-lsp",
+  "libs/prism",
+]
+
+[tool.uv.sources]
+prism-language = { workspace = true }
+prism-transpiler = { workspace = true }
+prism-runtime = { workspace = true }
+prism-sdk = { workspace = true }
+prism-adapter-codex = { workspace = true }
+prism-adapter-litellm = { workspace = true }
+prism-adapter-python = { workspace = true }
+prism-platform = { workspace = true }
+prism-cli = { workspace = true }
+prism-lsp = { workspace = true }
+prism-stdlib = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+include = [
+  "packages/*/src/**/*.py",
+  "libs/*/src/**/*.py",
+  "tests/**/*.py",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
+[tool.pyright]
+include = [
+  "packages/prism-language/src",
+  "packages/prism-transpiler/src",
+  "packages/prism-runtime/src",
+  "packages/prism-sdk/src",
+  "packages/prism-adapter-codex/src",
+  "packages/prism-adapter-litellm/src",
+  "packages/prism-adapter-python/src",
+  "packages/prism-platform/src",
+  "packages/prism-cli/src",
+  "packages/prism-lsp/src",
+  "libs/prism/src",
+  "tests",
+  "to_prism/src",
+  "to_prism/tests",
+]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+extraPaths = [
+  "packages/prism-language/src",
+  "packages/prism-transpiler/src",
+  "packages/prism-runtime/src",
+  "packages/prism-sdk/src",
+  "packages/prism-adapter-codex/src",
+  "packages/prism-adapter-litellm/src",
+  "packages/prism-adapter-python/src",
+  "packages/prism-platform/src",
+  "packages/prism-cli/src",
+  "packages/prism-lsp/src",
+  "libs/prism/src",
+  "to_prism/src",
+]
+
+[tool.vulture]
+min_confidence = 80
+paths = [
+  "packages/prism-language/src",
+  "packages/prism-transpiler/src",
+  "packages/prism-runtime/src",
+  "packages/prism-sdk/src",
+  "packages/prism-adapter-codex/src",
+  "packages/prism-adapter-litellm/src",
+  "packages/prism-adapter-python/src",
+  "packages/prism-platform/src",
+  "packages/prism-cli/src",
+  "packages/prism-lsp/src",
+  "libs/prism/src",
+  "tests",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "packages/prism-language/src",
+  "packages/prism-transpiler/src",
+  "packages/prism-runtime/src",
+  "packages/prism-sdk/src",
+  "packages/prism-adapter-codex/src",
+  "packages/prism-adapter-litellm/src",
+  "packages/prism-adapter-python/src",
+  "packages/prism-platform/src",
+  "packages/prism-cli/src",
+  "packages/prism-lsp/src",
+  "libs/prism/src",
+  "tests",
+]
+testpaths = ["tests"]
+# Run the suite across all CPU cores via pytest-xdist. Override with `-n0` to
+# run serially (e.g. for `-s`/pdb debugging or a single test).
+# Full end-to-end pipeline tests are excluded by default; run them with `-m e2e`.
+addopts = "-n auto -m 'not e2e'"
+markers = ["e2e: full end-to-end pipeline tests, excluded by default (run with -m e2e)"]

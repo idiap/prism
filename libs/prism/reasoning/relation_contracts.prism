@@ -1,0 +1,143 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+# Nominal epistemic state. Proposition P and exact Status remain type indices.
+type ClaimId:
+    sequence: Nat
+
+type Boundary:
+    | GlobalBoundary
+    | NamedBoundary(name: String)
+
+type Scope:
+    boundaries: Set[Boundary]
+
+type SourceId:
+    sequence: Nat
+
+type Provenance:
+    sources: Set[SourceId]
+
+type Taint:
+    | AssumptionTaint(subject: ClaimId)
+    | DomainTaint(subject: ClaimId)
+    | SamplingTaint(subject: ClaimId)
+    | ModelTaint(subject: ClaimId)
+
+type Obligation[Subject, Discharge]:
+    subject: Subject
+    required: Discharge
+
+type Judgment[P, Status]:
+    status: Status
+    identity: ClaimId
+    scope: Scope
+    provenance: Provenance
+    taints: Set[Taint]
+    obligations: Set[Obligation[ClaimId, Status]]
+
+# Proof propositions used by conservation certificates.
+def IdentityIsPreserved() -> Prop:
+    return claim("the claim identity is preserved")
+
+def RevisionLinksPredecessor() -> Prop:
+    return claim("the revised claim identity links to its predecessor")
+
+def ScopeIsContained() -> Prop:
+    return claim("the target scope is contained in the source scope")
+
+def SourcesRemainReachable() -> Prop:
+    return claim("indispensable provenance sources remain reachable")
+
+def TaintIsDischarged() -> Prop:
+    return claim("the removed taint has typed discharge evidence")
+
+def AssuranceIsPreserved() -> Prop:
+    return claim("the target does not exceed the source assurance")
+
+def AssuranceIsAuthorized() -> Prop:
+    return claim("the stronger assurance has an authorized introduction")
+
+def ObligationIsDischarged() -> Prop:
+    return claim("the closed obligation has its required discharge")
+
+def StateIsEqual() -> Prop:
+    return claim("all epistemic state components are equal")
+
+type IdentityChange[Before, After]:
+    | IdentityPreserved(
+        before: Before,
+        after: After,
+        proof: Proof[IdentityIsPreserved()]
+    )
+    | IdentityRevised(
+        before: Before,
+        after: After,
+        proof: Proof[RevisionLinksPredecessor()]
+    )
+
+type ScopeChange[Before, After]:
+    before: Before
+    after: After
+    containment: Proof[ScopeIsContained()]
+
+type ProvenanceChange[Before, After]:
+    before: Before
+    after: After
+    reachability: Proof[SourcesRemainReachable()]
+
+type TaintDischarge:
+    taint: Taint
+    discharge: Proof[TaintIsDischarged()]
+
+type TaintChange[Before, After]:
+    before: Before
+    after: After
+    discharges: Set[TaintDischarge]
+
+type AssuranceChange[Before, After]:
+    | AssurancePreserved(
+        before: Before,
+        after: After,
+        proof: Proof[AssuranceIsPreserved()]
+    )
+    | AssuranceIntroduced(
+        before: Before,
+        after: After,
+        proof: Proof[AssuranceIsAuthorized()]
+    )
+
+type ObligationDischarge[Subject, Discharge]:
+    obligation: Obligation[Subject, Discharge]
+    proof: Proof[ObligationIsDischarged()]
+
+type ObligationChange[Before, After, Subject, Discharge]:
+    before: Before
+    after: After
+    discharges: Set[ObligationDischarge[Subject, Discharge]]
+
+type StateConservation[Before, After, Subject, Discharge]:
+    identity: IdentityChange[Before, After]
+    scope: ScopeChange[Before, After]
+    provenance: ProvenanceChange[Before, After]
+    taints: TaintChange[Before, After]
+    assurance: AssuranceChange[Before, After]
+    obligations: ObligationChange[Before, After, Subject, Discharge]
+
+type ExactPreservation[State]:
+    state: State
+    proof: Proof[StateIsEqual()]
+
+type JoinCertificate[Left, Right, Joined]:
+    left: Left
+    right: Right
+    joined: Joined
+    left_conservation: StateConservation[Left, Joined, ClaimId, Unit]
+    right_conservation: StateConservation[Right, Joined, ClaimId, Unit]
+
+type JoinError:
+    | IdentityConflict(left: ClaimId, right: ClaimId)
+    | EmptyScopeIntersection(scope: Scope)
+    | IncompatibleStatus(identity: ClaimId)

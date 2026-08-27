@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+type AnalogicalInput[SourceValue, TargetValue, CorrespondenceValue]:
+    source: SourceValue
+    target: TargetValue
+    correspondence: CorrespondenceValue
+
+type Analogical[Conclusion, SourceValue, TargetValue, CorrespondenceValue] = (
+    source: AnalogicalInput[SourceValue, TargetValue, CorrespondenceValue],
+) -> Conclusion

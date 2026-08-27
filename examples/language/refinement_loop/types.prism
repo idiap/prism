@@ -1,0 +1,138 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from prism.reasoning.methods.abductive import AbductionInput
+
+type Burn:
+    duration_seconds: Float
+    throttle: Float
+    angle_degrees: Float
+
+type MissionConstraints:
+    description: String
+    initial_x: Float
+    initial_altitude: Float
+    initial_vx: Float
+    initial_vy: Float
+    dry_mass: Float
+    initial_fuel: Float
+    lunar_gravity: Float
+    fuel_burn_rate: Float
+    fuel_reserve: Float
+    max_thrust: Float
+    landing_zone_min_x: Float
+    landing_zone_max_x: Float
+    max_horizontal_speed: Float
+    min_vertical_speed: Float
+    max_lander_angle: Float
+    touchdown_altitude_tolerance: Float
+
+type TrajectoryBounds:
+    touchdown_x: Float
+    touchdown_altitude: Float
+    touchdown_vx: Float
+    touchdown_vy: Float
+    touchdown_angle: Float
+    fuel_remaining: Float
+    preterminal_clearance_lower_bound: Float
+    terminal_entry_vy_upper_bound: Float
+    peak_thrust_upper_bound: Float
+
+type LanderState:
+    x: Float
+    altitude: Float
+    vx: Float
+    vy: Float
+    fuel: Float
+
+type ConstraintChecks:
+    inside_landing_zone: Bool
+    horizontal_speed_safe: Bool
+    vertical_speed_safe: Bool
+    touchdown_altitude_safe: Bool
+    attitude_safe: Bool
+    fuel_reserve_safe: Bool
+    terrain_clearance_safe: Bool
+    engine_limit_safe: Bool
+    fuel_nonnegative: Bool
+
+type ConstraintResult:
+    constraint: String
+    satisfied: Bool
+    observed_value: Float
+    required_condition: String
+
+type Counterexample:
+    active: Bool
+    assessment_time: Float
+    constraints: List[ConstraintResult]
+
+type PlanNarrative:
+    strategy: String
+
+type PlanHypothesis:
+    mission: MissionConstraints
+    strategy: String
+    simulator_feedback: Counterexample
+    prior_touchdown_x: Float
+    prior_touchdown_altitude: Float
+    prior_horizontal_speed: Float
+    prior_vertical_speed: Float
+    prior_lander_angle: Float
+    prior_fuel_remaining: Float
+    coast: Burn
+    braking: Burn
+    descent: Burn
+    terminal: Burn
+
+type ExplainRefinement:
+    mission: MissionConstraints
+    feedback: Counterexample
+    proposed_plan: PlanHypothesis
+
+def MissionAccepted(mission: MissionConstraints) -> Prop
+
+def PlanWellFormed(plan: Computed[PlanHypothesis]) -> Prop
+
+def PlausiblyExplainsFeedback(
+    mission: MissionConstraints,
+    hypothesis: Computed[PlanHypothesis],
+    prior: PlanHypothesis,
+) -> Prop
+
+def SafeUnderModel(plan: Computed[PlanHypothesis]) -> Prop
+
+type AcceptedMission = Validated[
+    value: MissionConstraints,
+    MissionAccepted(value),
+]
+
+type AcceptedPlan = Validated[
+    value: Computed[PlanHypothesis],
+    PlanWellFormed(value),
+]
+
+type LandingAssessment:
+    plan: AcceptedPlan
+    trajectory: Computed[TrajectoryBounds]
+    checks: Computed[ConstraintChecks]
+    accepted: Bool
+    counterexample: Counterexample
+
+type LunarSource = AbductionInput[
+    AcceptedMission,
+    Evidence[PlanHypothesis],
+]
+
+type TrajectoryRefinementState:
+    candidate: AcceptedPlan
+    finding: LandingAssessment
+    source: LunarSource
+
+type RefineTrajectory = (TrajectoryRefinementState) -> LunarSource
+
+type LunarLandingError:
+    | ModelFailure
+    | ValidationError

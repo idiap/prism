@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.refinement_loop.simulation import (
+    check_trajectory,
+    validate_safe_plan,
+)
+from examples.language.refinement_loop.reasoning import LunarLandingRefinement
+from examples.language.refinement_loop.refinement import (
+    materialize_abductive_plan,
+    prepare_refinement,
+    support_trajectory_hypothesis,
+)
+
+lunar_landing_refinement = LunarLandingRefinement(
+    candidate = materialize_abductive_plan,
+    candidate_by = support_trajectory_hypothesis,
+    finding = check_trajectory,
+    safe_plan = validate_safe_plan,
+    source = prepare_refinement,
+)

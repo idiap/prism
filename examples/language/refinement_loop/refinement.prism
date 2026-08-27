@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.refinement_loop.lunar_refinement_skill import lunar_refinement_narrator_skill
+from examples.language.refinement_loop.types import (
+    AcceptedPlan,
+    ExplainRefinement,
+    LunarSource,
+    LunarLandingError,
+    PlanHypothesis,
+    PlanNarrative,
+    PlanWellFormed,
+    PlausiblyExplainsFeedback,
+    TrajectoryRefinementState,
+)
+from examples.language.refinement_loop.optimization import refine_plan
+from prism.reasoning.methods.abductive import AbductionInput
+
+def prepare_plan_request(
+    source: LunarSource,
+) -> ExplainRefinement:
+    proposed = source.observation.value
+    return ExplainRefinement(
+        mission = source.background.value,
+        feedback = proposed.simulator_feedback,
+        proposed_plan = proposed,
+    )
+
+agent refinement_narrator(
+    task: ExplainRefinement,
+) -> Result[Generated[PlanNarrative], ModelFailure]
+    ! {AI.Generate, Context.Disclose}:
+    skills: Skills[ExplainRefinement] = [lunar_refinement_narrator_skill]
+
+def assemble_plan_hypothesis(
+    generated: Generated[PlanNarrative],
+    source: LunarSource,
+) -> Computed[PlanHypothesis]:
+    requested = source.observation.value
+    plan = PlanHypothesis(
+        mission = source.background.value,
+        strategy = generated.value.strategy,
+        simulator_feedback = requested.simulator_feedback,
+        prior_touchdown_x = requested.prior_touchdown_x,
+        prior_touchdown_altitude = requested.prior_touchdown_altitude,
+        prior_horizontal_speed = requested.prior_horizontal_speed,
+        prior_vertical_speed = requested.prior_vertical_speed,
+        prior_lander_angle = requested.prior_lander_angle,
+        prior_fuel_remaining = requested.prior_fuel_remaining,
+        coast = requested.coast,
+        braking = requested.braking,
+        descent = requested.descent,
+        terminal = requested.terminal,
+    )
+    return compute(plan, procedure = "lunar-plan-control-assembly-v1")
+
+def validate_plan_hypothesis(
+    computed: Computed[PlanHypothesis],
+    source: LunarSource,
+) -> Result[AcceptedPlan, ValidationError]:
+    plan = computed.value
+    return validate[PlanWellFormed(computed)](
+        computed,
+        validator = "lunar-plan-v1",
+        require = [
+            plan.mission == source.background.value,
+            plan.strategy != "",
+            plan.coast.duration_seconds > 0.0,
+            plan.coast.throttle >= 0.0,
+            plan.coast.throttle <= 1.0,
+            plan.braking.duration_seconds > 0.0,
+            plan.braking.throttle >= 0.0,
+            plan.braking.throttle <= 1.0,
+            plan.descent.duration_seconds > 0.0,
+            plan.descent.throttle >= 0.0,
+            plan.descent.throttle <= 1.0,
+            plan.terminal.duration_seconds > 0.0,
+            plan.terminal.throttle >= 0.0,
+            plan.terminal.throttle <= 1.0,
+        ],
+    )
+
+def prepare_refinement(
+    state: TrajectoryRefinementState,
+) -> LunarSource:
+    prior_candidate = state.candidate.value.value
+    optimized = refine_plan(prior_candidate)
+    revised = PlanHypothesis(
+        mission = state.source.background.value,
+        strategy = prior_candidate.strategy,
+        simulator_feedback = state.finding.counterexample,
+        prior_touchdown_x = state.finding.trajectory.value.touchdown_x,
+        prior_touchdown_altitude = state.finding.trajectory.value.touchdown_altitude,
+        prior_horizontal_speed = state.finding.trajectory.value.touchdown_vx,
+        prior_vertical_speed = state.finding.trajectory.value.touchdown_vy,
+        prior_lander_angle = state.finding.trajectory.value.touchdown_angle,
+        prior_fuel_remaining = state.finding.trajectory.value.fuel_remaining,
+        coast = optimized.coast,
+        braking = optimized.braking,
+        descent = optimized.descent,
+        terminal = optimized.terminal,
+    )
+    observation = map_evidence(
+        state.source.observation,
+        value = revised,
+        transformation = (
+            "deterministic simulator counterexample attached to next abductive request"
+        ),
+    )
+    return AbductionInput(
+        background = state.source.background,
+        observation = observation,
+    )
+
+def support_trajectory_hypothesis(
+    source: LunarSource,
+    target: AcceptedPlan,
+) -> Result[
+    Supported[PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value)],
+    Never,
+]:
+    hypothesis = target.value.value
+    feedback = source.observation.value
+    policy: MaterialPolicy[
+        PlanHypothesis,
+        PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value),
+        Never,
+    ] = material_policy(
+        "lunar-trajectory-abduction-v1",
+        require = [
+            hypothesis.mission == source.background.value,
+            feedback.mission == source.background.value,
+            hypothesis.simulator_feedback.active == feedback.simulator_feedback.active,
+            hypothesis.simulator_feedback.assessment_time == feedback.simulator_feedback.assessment_time,
+            hypothesis.simulator_feedback.constraints == feedback.simulator_feedback.constraints,
+            hypothesis.prior_touchdown_x == feedback.prior_touchdown_x,
+            hypothesis.prior_touchdown_altitude == feedback.prior_touchdown_altitude,
+            hypothesis.prior_horizontal_speed == feedback.prior_horizontal_speed,
+            hypothesis.prior_vertical_speed == feedback.prior_vertical_speed,
+            hypothesis.prior_lander_angle == feedback.prior_lander_angle,
+            hypothesis.prior_fuel_remaining == feedback.prior_fuel_remaining,
+        ],
+    )
+    return source.observation |~[policy] PlausiblyExplainsFeedback(
+        source.background.value,
+        target.value,
+        source.observation.value,
+    )
+
+workflow materialize_abductive_plan(
+    source: LunarSource,
+) -> AcceptedPlan
+    fails LunarLandingError
+    ! {AI.Generate, Context.Disclose}:
+    sequence:
+        [request: prepare_plan_request(source)]
+        [generated: refinement_narrator(request)]
+        [computed: assemble_plan_hypothesis(generated, source)]
+        [validated: validate_plan_hypothesis(computed, source)]
+    return validated

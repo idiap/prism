@@ -1,0 +1,128 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from prism.reasoning.relation_contracts import (
+    ClaimId,
+    Judgment,
+    SourceId,
+)
+
+type KnowledgeNode[Schema]:
+    value: Schema
+    identity: ClaimId
+
+type KnowledgeEdge:
+    source: ClaimId
+    target: ClaimId
+
+type KnowledgeBase[Schema, Version]:
+    version: Version
+    nodes: Set[KnowledgeNode[Schema]]
+    edges: Set[KnowledgeEdge]
+
+type KnowledgeSuccessor[Before, After]:
+    before: Before
+    after: After
+    retained_sources: Set[SourceId]
+
+type CalibrationDisposition:
+    | Conserve
+    | Demote
+    | Promote
+    | Quarantine
+    | Gate
+    | Accept
+    | Stop
+    | AuthorizeHandoff
+
+type EpistemicDisposition:
+    | Continue
+    | Reject
+    | Defer
+    | Route
+
+type EpistemicDecision[Subjects]:
+    subjects: Subjects
+    disposition: EpistemicDisposition
+
+type CalibrationDecision[Subjects]:
+    subjects: Subjects
+    disposition: CalibrationDisposition
+    policy_authorization: Proof[CalibrationIsAuthorized()]
+    no_new_claim: Proof[CalibrationCreatesNoClaim()]
+    no_new_evidence: Proof[CalibrationCreatesNoEvidence()]
+
+def CalibrationIsAuthorized() -> Prop:
+    return claim("the calibration disposition is authorized by its policy")
+
+def CalibrationCreatesNoClaim() -> Prop:
+    return claim("calibration creates no substantive claim")
+
+def CalibrationCreatesNoEvidence() -> Prop:
+    return claim("calibration creates no object-level evidence")
+
+type ModelAssumption:
+    identity: ClaimId
+
+type ModelParameter:
+    identity: ClaimId
+
+type ErrorBound:
+    magnitude: Decimal
+
+type IdealizationMap[System]:
+    system: System
+    assumptions: Set[ModelAssumption]
+
+type ModelArtifact[System, ModelScope]:
+    system: System
+    scope: ModelScope
+    assumptions: Set[ModelAssumption]
+    parameters: Set[ModelParameter]
+    error_bounds: Set[ErrorBound]
+    idealization: IdealizationMap[System]
+
+type ReasoningPlan[Objective, Step]:
+    objective: Objective
+    steps: List[Step]
+
+type Presentation[Sources]:
+    sources: Sources
+    authority: ZeroAuthority
+
+type ZeroAuthority:
+    | ProjectionOnly
+
+type Bundle[Components]:
+    components: Components
+
+type Unavailable[Expected]:
+    expected: Expected
+    reason: UnavailableReason
+
+type UnavailableReason:
+    | UnresolvedProjection
+    | MissingMaterialization
+    | ClosedKnowledgeBoundary
+
+type KnowledgeAdmission[Proposal, Schema, Version]:
+    proposal: Proposal
+    target: KnowledgeBase[Schema, Version]
+    authorization: Proof[KnowledgeAdmissionIsAuthorized()]
+
+def KnowledgeAdmissionIsAuthorized() -> Prop:
+    return claim("the proposal is authorized for knowledge-base admission")
+
+# Semantic ports are nominal or assurance-preserving aliases, never artifact labels.
+type Observation[Value] = Evidence[Value]
+type Witness[Value] = Evidence[Value]
+type Candidate[P, Status] = Judgment[P, Status]
+type Premise[P, Status] = Judgment[P, Status]
+type Calibrated[Subjects] = CalibrationDecision[Subjects]
+type Assessment[Subjects] = EpistemicDecision[Subjects]
+
+type Delta[Before, After]:
+    before: Before
+    after: After

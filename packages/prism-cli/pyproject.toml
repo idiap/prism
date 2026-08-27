@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-cli"
+version = "1.0.0"
+readme = "README.md"
+description = "Command-line interface for parsing, checking, compiling, running, and verifying Prism programs."
+license = "MIT"
+license-files = ["LICENSES/MIT.txt"]
+requires-python = ">=3.12"
+dependencies = [
+  "prism-language==1.0.0",
+  "prism-transpiler==1.0.0",
+  "prism-runtime==1.0.0",
+  "prism-sdk[runtime]==1.0.0",
+  "prism-adapter-codex==1.0.0",
+  "prism-adapter-litellm==1.0.0",
+  "prism-adapter-python==1.0.0",
+  "typer>=0.12",
+  "python-dotenv>=1.0",
+]
+
+[project.scripts]
+prism = "prism.tooling.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["prism.tooling.cli*"]
+namespaces = true

@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+# Python environments and caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Build outputs
+build/
+dist/
+**/dist/
+**/node_modules/
+**/.docusaurus/
+*.vsix
+
+# Local Prism state and legacy runtime outputs
+.prism/*
+.prism_runs/
+runs/
+artifacts_*/
+state/
+tmp/
+artifacts/environment_agents/
+catalog/agents/imported/conceptual-discovery/magellan/.magellan/
+catalog/agents/imported/conceptual-discovery/magellan/discovery-report.html
+docs/maintenance/
+docs/*.aux
+docs/*.fdb_latexmk
+docs/*.fls
+docs/*.log
+docs/*.out
+docs/*.toc
+src/prism_solver.egg-info/
+overview.md
+CLAUDE.md
+AGENTS.md
+notes/
+dependencies/*
+.env*
+!.env.example
+.DS_Store
+.claude/
+
+# Provider contract fixtures shipped by the self-contained converter.
+!to_prism/tests/fixtures/**/AGENTS.md
+!to_prism/tests/fixtures/**/CLAUDE.md
+!to_prism/tests/fixtures/**/.claude/
+!to_prism/tests/fixtures/**/.claude/**
+
+/skills/
+
+# Local presentation development and presentation-specific skills
+/presentation/*
+!/presentation/assets/
+/presentation/assets/*
+!/presentation/*.license
+!/presentation/assets/*.license

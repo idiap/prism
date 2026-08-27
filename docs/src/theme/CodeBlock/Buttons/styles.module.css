@@ -1,0 +1,37 @@
+/*
+ * SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+ * SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+.buttonGroup {
+  column-gap: 0.2rem;
+  display: flex;
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  z-index: 1;
+}
+
+.buttonGroup button {
+  align-items: center;
+  background: var(--prism-background-color);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+  color: var(--prism-color);
+  display: flex;
+  line-height: 0;
+  opacity: 0;
+  padding: 0.4rem;
+  transition: opacity var(--ifm-transition-fast) ease-in-out;
+}
+
+.buttonGroup button:focus-visible,
+.buttonGroup button:hover {
+  opacity: 1 !important;
+}
+
+:global(.theme-code-block:hover) .buttonGroup button {
+  opacity: 0.4;
+}

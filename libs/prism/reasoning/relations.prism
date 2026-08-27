@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from prism.reasoning.relation_contracts import ExactPreservation, StateIsEqual
+
+type Required[Before, After]:
+    source: Before
+    target: After
+
+type Assumed[Before, After]:
+    source: Before
+    target: After
+
+type Tested[Before, After]:
+    source: Before
+    target: After
+
+type CalibratedRelation[Before, After]:
+    source: Before
+    target: After
+
+type Transferred[Before, After]:
+    source: Before
+    target: After
+
+type Probed[Before, After]:
+    source: Before
+    target: After
+
+type Preserved[State]:
+    source: ExactPreservation[State]
+    target: ExactPreservation[State]
+    equality: Proof[StateIsEqual()]
+
+relation Requires[Before, After](
+    source: Before,
+    target: After,
+) -> Required[Before, After]
+
+relation Assume[Before, After](
+    source: Before,
+    target: After,
+) -> Assumed[Before, After]
+
+relation Test[Before, After](
+    source: Before,
+    target: After,
+) -> Tested[Before, After]
+
+relation Calibrate[Before, After](
+    source: Before,
+    target: After,
+) -> CalibratedRelation[Before, After]
+
+relation Transfer[Before, After](
+    source: Before,
+    target: After,
+) -> Transferred[Before, After]
+
+relation Probe[Before, After](
+    source: Before,
+    target: After,
+) -> Probed[Before, After]
+
+relation Preserve[State](
+    source: ExactPreservation[State],
+    target: ExactPreservation[State],
+) -> Preserved[State]

@@ -1,0 +1,237 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.refinement_loop.simulation import simulate_trajectory
+from examples.language.refinement_loop.types import Burn, PlanHypothesis
+
+def positive(value: Float) -> Float:
+    return value if value > 0.0 else 0.0
+
+def magnitude(value: Float) -> Float:
+    return value if value >= 0.0 else -value
+
+def clamp(value: Float, lower: Float, upper: Float) -> Float:
+    below_upper = value if value < upper else upper
+    return below_upper if below_upper > lower else lower
+
+def revise_duration(burn: Burn, change: Float) -> Burn:
+    return Burn(
+        duration_seconds = clamp(burn.duration_seconds + change, 0.1, 60.0),
+        throttle = burn.throttle,
+        angle_degrees = 0.0,
+    )
+
+def revise_throttle(burn: Burn, change: Float) -> Burn:
+    return Burn(
+        duration_seconds = burn.duration_seconds,
+        throttle = clamp(burn.throttle + change, 0.0, 1.0),
+        angle_degrees = 0.0,
+    )
+
+def replace_burns(
+    plan: PlanHypothesis,
+    coast: Burn,
+    braking: Burn,
+    descent: Burn,
+    terminal: Burn,
+) -> PlanHypothesis:
+    return PlanHypothesis(
+        mission = plan.mission,
+        strategy = plan.strategy,
+        simulator_feedback = plan.simulator_feedback,
+        prior_touchdown_x = plan.prior_touchdown_x,
+        prior_touchdown_altitude = plan.prior_touchdown_altitude,
+        prior_horizontal_speed = plan.prior_horizontal_speed,
+        prior_vertical_speed = plan.prior_vertical_speed,
+        prior_lander_angle = plan.prior_lander_angle,
+        prior_fuel_remaining = plan.prior_fuel_remaining,
+        coast = coast,
+        braking = braking,
+        descent = descent,
+        terminal = terminal,
+    )
+
+def trajectory_violation_score(plan: PlanHypothesis) -> Float:
+    mission = plan.mission
+    bounds = simulate_trajectory(plan).value
+    margin = 0.001
+    return (
+        positive(mission.landing_zone_min_x + margin - bounds.touchdown_x)
+        + positive(bounds.touchdown_x - mission.landing_zone_max_x + margin)
+        + 10.0 * positive(
+            magnitude(bounds.touchdown_vx) - mission.max_horizontal_speed + margin
+        )
+        + 20.0 * positive(
+            mission.min_vertical_speed + margin - bounds.touchdown_vy
+        )
+        + 20.0 * positive(bounds.touchdown_vy + margin)
+        + 20.0 * positive(margin - bounds.touchdown_altitude)
+        + 20.0 * positive(
+            bounds.touchdown_altitude
+            - mission.touchdown_altitude_tolerance
+            + margin
+        )
+        + 10.0 * positive(
+            bounds.touchdown_angle - mission.max_lander_angle + margin
+        )
+        + 20.0 * positive(mission.fuel_reserve + margin - bounds.fuel_remaining)
+        + 20.0 * positive(
+            margin - bounds.preterminal_clearance_lower_bound
+        )
+        + 40.0 * positive(bounds.terminal_entry_vy_upper_bound + margin)
+        + 20.0 * positive(bounds.touchdown_vy + margin)
+        + 20.0 * positive(margin - bounds.fuel_remaining)
+    )
+
+def best_candidate(
+    candidates: List[PlanHypothesis],
+    index: Int,
+    best: PlanHypothesis,
+    best_score: Float,
+) -> PlanHypothesis:
+    candidate = candidates[index]
+    candidate_score = trajectory_violation_score(candidate)
+    selected = (
+        candidate
+        if candidate_score < best_score
+        else best
+    )
+    selected_score = candidate_score if candidate_score < best_score else best_score
+    return (
+        best_candidate(candidates, index + 1, selected, selected_score)
+        if index + 1 < length(candidates)
+        else selected
+    )
+
+def refine_plan(plan: PlanHypothesis) -> PlanHypothesis:
+    coast = revise_duration(plan.coast, 0.0)
+    braking = revise_duration(plan.braking, 0.0)
+    descent = revise_duration(plan.descent, 0.0)
+    terminal = revise_duration(plan.terminal, 0.0)
+    normalized = replace_burns(plan, coast, braking, descent, terminal)
+    bounds = simulate_trajectory(normalized).value
+    duration_step = clamp(magnitude(bounds.touchdown_altitude) / 40.0, 0.1, 5.0)
+    throttle_step = clamp(magnitude(bounds.touchdown_vy) / 20.0, 0.02, 0.25)
+    candidates = [
+        normalized,
+        replace_burns(
+            normalized,
+            revise_duration(coast, -duration_step),
+            braking,
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            revise_duration(coast, duration_step),
+            braking,
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            revise_throttle(coast, -throttle_step),
+            braking,
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            revise_throttle(coast, throttle_step),
+            braking,
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            revise_duration(braking, -duration_step),
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            revise_duration(braking, duration_step),
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            revise_throttle(braking, -throttle_step),
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            revise_throttle(braking, throttle_step),
+            descent,
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            revise_duration(descent, -duration_step),
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            revise_duration(descent, duration_step),
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            revise_throttle(descent, -throttle_step),
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            revise_throttle(descent, throttle_step),
+            terminal,
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            descent,
+            revise_duration(terminal, -duration_step),
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            descent,
+            revise_duration(terminal, duration_step),
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            descent,
+            revise_throttle(terminal, -throttle_step),
+        ),
+        replace_burns(
+            normalized,
+            coast,
+            braking,
+            descent,
+            revise_throttle(terminal, throttle_step),
+        ),
+    ]
+    return best_candidate(
+        candidates,
+        0,
+        normalized,
+        trajectory_violation_score(normalized),
+    )

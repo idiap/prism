@@ -1,0 +1,56 @@
+/*
+ * SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+ * SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+.copyButton {
+  gap: 0.4rem;
+  line-height: 1 !important;
+  opacity: 1 !important;
+  padding: 0.45rem 0.6rem !important;
+}
+
+.copyButtonIcons {
+  height: 1rem;
+  position: relative;
+  width: 1rem;
+}
+
+.copyButtonIcon,
+.copyButtonSuccessIcon {
+  fill: currentcolor;
+  height: inherit;
+  left: 0;
+  opacity: inherit;
+  position: absolute;
+  top: 0;
+  transition: all var(--ifm-transition-fast) ease;
+  width: inherit;
+}
+
+.copyButtonSuccessIcon {
+  color: #00b755;
+  left: 50%;
+  opacity: 0;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.33);
+}
+
+.copyButtonCopied .copyButtonIcon {
+  opacity: 0;
+  transform: scale(0.33);
+}
+
+.copyButtonCopied .copyButtonSuccessIcon {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transition-delay: 0.075s;
+}
+
+.copyButtonLabel {
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

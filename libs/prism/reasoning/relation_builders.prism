@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from prism.reasoning.relation_contracts import ExactPreservation
+from prism.reasoning.relations import (
+    Assumed,
+    CalibratedRelation,
+    Preserved,
+    Probed,
+    Required,
+    Tested,
+    Transferred,
+)
+
+def build_requires[Before, After](
+    source: Before,
+    target: After,
+) -> Required[Before, After]:
+    return Required(source = source, target = target)
+
+def build_assume[Before, After](
+    source: Before,
+    target: After,
+) -> Assumed[Before, After]:
+    return Assumed(source = source, target = target)
+
+def build_test[Before, After](
+    source: Before,
+    target: After,
+) -> Tested[Before, After]:
+    return Tested(source = source, target = target)
+
+def build_calibrate[Before, After](
+    source: Before,
+    target: After,
+) -> CalibratedRelation[Before, After]:
+    return CalibratedRelation(source = source, target = target)
+
+def build_transfer[Before, After](
+    source: Before,
+    target: After,
+) -> Transferred[Before, After]:
+    return Transferred(source = source, target = target)
+
+def build_probe[Before, After](
+    source: Before,
+    target: After,
+) -> Probed[Before, After]:
+    return Probed(source = source, target = target)
+
+def build_preserve[State](
+    source: ExactPreservation[State],
+    target: ExactPreservation[State],
+) -> Preserved[State]:
+    return Preserved(source = source, target = target, equality = target.proof)

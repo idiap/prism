@@ -1,0 +1,27 @@
+Facts:
+The applicant was a newspaper editor whose private messages were copied during a workplace investigation.
+The domestic courts accepted the messages as evidence, but the record is unclear about notice and safeguards.
+
+Relevant law:
+Article 8 of the Convention protects private life and correspondence and provides that interference must be lawful, pursue a legitimate aim, and remain necessary in a democratic society.
+The legal standard means that the Court asks whether the domestic authorities gave relevant and sufficient reasons.
+
+Citation:
+Convention Article 8 § 2 and López Ribalda v. Spain are cited as legal authority for workplace-monitoring limits.
+
+Precedent:
+In a similar case, the Court allowed monitoring only where concrete safeguards existed; that controlling precedent may qualify the general rule unless a relevant difference defeats the analogy.
+
+Party arguments:
+The applicant argues that the measure was disproportionate because notice was missing.
+The Government takes the opposite view and says the safeguards were adequate because the investigation was narrow.
+
+Exceptional case:
+The Government says this is an exception and a special case because verified emergency security records justified a temporary waiver of the ordinary notice rule.
+
+Court reasoning:
+Taken together, the uncertain notice, the cited precedent, and the narrow investigation suggest that proportionality is contested rather than settled.
+The Court concludes that the safeguards must be examined before the interference can be accepted.
+
+Remedy:
+If a violation is found, just satisfaction and damages remain separate remedial questions.
