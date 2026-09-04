@@ -167,6 +167,8 @@ def compile(module: TypedModule) -> ExecutableProgram:
         declarations=tuple(definitions),
         entry_callable=entry,
         module_hashes=module.module_hashes,
+        aliases=module.aliases,
+        variants=module.variants,
         checked_module=module.checked_module,
     )
 

@@ -154,5 +154,7 @@ class ExecutableProgram:
     declarations: tuple[Any, ...]
     entry_callable: str | None
     module_hashes: Mapping[str, str] = field(default_factory=dict)
+    aliases: Mapping[str, CoreType] = field(default_factory=dict)
+    variants: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     ir_version: str = "10"
     checked_module: CheckedModule | None = None

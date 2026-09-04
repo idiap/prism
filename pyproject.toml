@@ -84,8 +84,6 @@ include = [
   "packages/prism-lsp/src",
   "libs/prism/src",
   "tests",
-  "to_prism/src",
-  "to_prism/tests",
 ]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
@@ -103,7 +101,6 @@ extraPaths = [
   "packages/prism-cli/src",
   "packages/prism-lsp/src",
   "libs/prism/src",
-  "to_prism/src",
 ]
 
 [tool.vulture]
