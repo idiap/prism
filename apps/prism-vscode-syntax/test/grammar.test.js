@@ -33,6 +33,9 @@ test('all TextMate regular expressions compile', () => {
 
 test('grammar covers every normative syntax family', () => {
   const cases = [
+    ['keyword.control.contract', '] with:'],
+    ['entity.other.attribute-name.contract', 'output.producers = [computed]'],
+    ['entity.other.attribute-name.contract', 'reasoning_archetypes = [deductive]'],
     ['comment.line', '# explanation'],
     ['string.quoted.multi', '"""documentation"""'],
     ['string.quoted.single', "'x'"],

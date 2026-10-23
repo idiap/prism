@@ -59,7 +59,7 @@ Use the form whose execution structure matches the callable dependencies.
 | `sequence` | Children execute in order and later nodes can consume earlier occurrences. |
 | `parallel` | Branches begin from the same environment and must produce distinct occurrence names. |
 | `choice` | A closed sum value selects one exhaustive case and all arms converge to the same outputs. |
-| `repeat` | A positive static bound controls iteration and compatible occurrences carry state. |
+| `repeat` | A positive integer bound controls iteration and compatible occurrences carry state. |
 
 Nested forms create one visible topology.
 
@@ -99,12 +99,16 @@ workflow route_review(submission: Submission) -> Review:
     return review
 ```
 
-Every arm above produces `review` with the same type. Duplicate constructors,
-unknown constructors, missing cases, and divergent outputs fail checking.
+Every arm above produces `review` with the same type. Intermediate occurrence
+names used in only some arms stay local to those branches. Only names produced
+by every arm are available after the choice, and their types must agree. This
+also lets reasoning branches bind distinct abstract methods before joining a
+shared result. Duplicate constructors, unknown constructors, missing cases, and
+branches without a shared result fail checking.
 
 ## Bound a repeat
 
-`refinement_policy` creates a `RefinementPolicy` with a positive static
+`refinement_policy` creates a `RefinementPolicy` with a positive integer
 iteration bound.
 
 ```prism
@@ -124,7 +128,10 @@ repeat refinement_policy(5, until = state.Finished):
     [state: revise(state)]
 ```
 
-The static bound remains mandatory and prevents an unbounded execution path.
+The bound remains mandatory and prevents an unbounded execution path. It may be
+a workflow or reasoning parameter, such as `refinement_policy(budget)`. The
+checker requires an `Int` or `Nat`; the runtime rejects nonpositive bounds before
+executing the repeat body. Literal nonpositive bounds are rejected during checking.
 
 ## Declare failures and effects
 

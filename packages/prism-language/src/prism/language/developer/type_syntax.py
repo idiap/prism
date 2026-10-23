@@ -10,8 +10,11 @@ from __future__ import annotations
 from prism.language.core import (
     CoreType,
 )
+from prism.language.core.indices import ValueIndex
 
 from .diagnostics import SourceSpan
+from .syntax import ast
+from .syntax.expressions import parse_expression
 
 
 def _split_top_level(text: str) -> tuple[str, ...]:
@@ -95,29 +98,17 @@ def parse_type(text: str, span: SourceSpan | None = None) -> CoreType:
         text = text[:effect_index].strip()
     arrow = _find_top_level(text, "->")
     if arrow >= 0:
-        left, right = text[:arrow].strip(), text[arrow + 2 :].strip()
-        if left.startswith("(") and left.endswith(")"):
-            left = left[1:-1]
-        parameters = []
-        for item in _split_top_level(left):
-            colon = _find_top_level(item, ":")
-            if colon >= 0:
-                parameters.append((item[:colon].strip(), parse_type(item[colon + 1 :])))
-            elif item:
-                parameters.append((None, parse_type(item)))
-        return CoreType(
-            "Function",
-            parameters=tuple(parameters),
-            result=parse_type(right),
-            effects=effects,
-        )
+        return _parse_function_type(text, arrow, effects)
     if text.startswith("(") and text.endswith(")"):
         items = _split_top_level(text[1:-1])
         return CoreType("Tuple", tuple(parse_type(item) for item in items))
     # Keep dependent value binders intact even when their value type is generic,
     # for example `value: Generated[Draft]`.
-    if _find_top_level(text, ":") > 0:
-        return CoreType(text)
+    colon = _find_top_level(text, ":")
+    if colon > 0:
+        return CoreType(
+            "ValueBinder", (parse_type(text[colon + 1 :]),), binder=text[:colon].strip()
+        )
     bracket = _find_top_level_open(text, "[")
     if bracket > 0 and text.endswith("]"):
         return CoreType(
@@ -125,9 +116,85 @@ def parse_type(text: str, span: SourceSpan | None = None) -> CoreType:
             tuple(
                 parse_type(item) for item in _split_top_level(text[bracket + 1 : -1])
             ),
+            effects=effects,
         )
     # Proposition applications are kept exact so dependent assurance types do
     # not accidentally apply to a different value.
     if "(" in text and text.endswith(")"):
-        return CoreType(text)
+        return CoreType("Proposition", proposition=parse_index(text, span))
     return CoreType(text)
+
+
+def _parse_function_type(text: str, arrow: int, effects: tuple[str, ...]) -> CoreType:
+    left, right = text[:arrow].strip(), text[arrow + 2 :].strip()
+    if left.startswith("(") and left.endswith(")"):
+        left = left[1:-1]
+    parameters = []
+    for item in _split_top_level(left):
+        colon = _find_top_level(item, ":")
+        if colon >= 0:
+            parameters.append((item[:colon].strip(), parse_type(item[colon + 1 :])))
+        elif item:
+            parameters.append((None, parse_type(item)))
+    return CoreType(
+        "Function",
+        parameters=tuple(parameters),
+        result=parse_type(right),
+        effects=effects,
+    )
+
+
+def parse_index(text: str, span: SourceSpan | None = None) -> ValueIndex:
+    return index_from_expression(parse_expression(text, span or SourceSpan(1)))
+
+
+def index_from_expression(expression: ast.Expression) -> ValueIndex:
+    if isinstance(expression, ast.NameExpr):
+        return ValueIndex("reference", expression.name)
+    if isinstance(expression, ast.LiteralExpr):
+        return ValueIndex("literal", repr(expression.value))
+    if isinstance(expression, ast.FieldExpr):
+        return ValueIndex(
+            "field", expression.field, (index_from_expression(expression.value),)
+        )
+    if isinstance(expression, ast.IndexExpr):
+        return ValueIndex(
+            "index",
+            "",
+            (
+                index_from_expression(expression.value),
+                index_from_expression(expression.index),
+            ),
+        )
+    if isinstance(expression, ast.UnaryExpr):
+        return ValueIndex(
+            "unary", expression.operator, (index_from_expression(expression.operand),)
+        )
+    if isinstance(expression, ast.BinaryExpr):
+        return ValueIndex(
+            "binary",
+            expression.operator,
+            (
+                index_from_expression(expression.left),
+                index_from_expression(expression.right),
+            ),
+        )
+    if isinstance(expression, ast.CallExpr):
+        return ValueIndex(
+            "apply",
+            "",
+            (
+                index_from_expression(expression.callee),
+                *(
+                    index_from_expression(argument.value)
+                    for argument in expression.arguments
+                ),
+            ),
+            argument_names=tuple(argument.name for argument in expression.arguments),
+            type_arguments=tuple(
+                parse_type(item.text, item.span) for item in expression.type_arguments
+            ),
+        )
+    raise ValueError(
+        f"unsupported expression in proposition index: {type(expression).__name__}"
+    )

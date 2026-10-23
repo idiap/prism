@@ -15,7 +15,7 @@ description = "Structured AI.Generate effect handler for Prism backed by LiteLLM
 license = "MIT"
 license-files = ["LICENSES/MIT.txt"]
 requires-python = ">=3.12"
-dependencies = ["prism-runtime==1.0.0", "litellm>=1.0"]
+dependencies = ["prism-language==1.0.0", "prism-runtime==1.0.0", "litellm>=1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

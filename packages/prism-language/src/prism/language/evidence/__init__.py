@@ -7,10 +7,18 @@
 
 from .checking import MaterialInferenceError, check_material_inference
 from .ir import EvidenceTransformation, MaterialInference
-from .model import Evidence, Provenance, Supported, combine_evidence, map_evidence
+from .model import (
+    Assessment,
+    Evidence,
+    PolicyDecision,
+    Provenance,
+    Supported,
+)
 from .policies import MaterialPolicyContract
 
 __all__ = [
+    "Assessment",
+    "PolicyDecision",
     "Evidence",
     "EvidenceTransformation",
     "MaterialInference",
@@ -19,6 +27,4 @@ __all__ = [
     "Provenance",
     "Supported",
     "check_material_inference",
-    "combine_evidence",
-    "map_evidence",
 ]

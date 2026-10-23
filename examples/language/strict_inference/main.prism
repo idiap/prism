@@ -17,5 +17,4 @@ def main() -> Result[Nat, ProofError]:
     proof = try kernel.check(term)
     source = DeductionInput(context = proof)
     flow = release_approval(source)
-    result = solve ReleaseApproval(source) using flow
-    return Ok(result)
+    return solve ReleaseApproval(source) using flow

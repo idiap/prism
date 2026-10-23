@@ -48,6 +48,7 @@ export interface PrismIdeCheckResult {
   diagnostics: PrismIdeDiagnostic[]
   symbols: PrismIdeSymbol[]
   type_spans: PrismIdeTypeSpan[]
+  occurrence_contracts: PrismOccurrenceContract[]
   core_module?: {
     format: string
     calculus: string
@@ -56,7 +57,45 @@ export interface PrismIdeCheckResult {
   } | null
 }
 
+export interface PrismOccurrenceContract {
+  identity: string
+  owner_identity: string
+  method_identity: string
+  execution_kind: 'method' | 'structural' | 'workflow'
+  classification: {
+    state: string
+    archetype_state: string
+    references: { taxonomy: string; version: string; facet: string; taxon: string; status: string }[]
+  }
+  input_requirements: unknown[]
+  requirements: unknown[]
+  relation?: unknown
+}
+
+export interface PrismObservedValue {
+  path: string[]
+  reference: string | null
+  producer: string
+  assurance: string
+  claim_disposition: string
+  assumptions: string[]
+  claim?: unknown
+  certificate?: Record<string, unknown> | null
+}
+
+export interface PrismOccurrenceOutcome {
+  execution: string
+  contract: string
+  observed: PrismObservedValue[]
+}
+
+export interface PrismProvenanceGraph {
+  values: { identity: string; activity: string; dependencies: string[]; artifact?: unknown }[]
+  activities: { identity: string; kind: string; operation: string; inputs: string[]; implementation_hash?: string; effect_record?: string; synthetic?: boolean }[]
+}
+
 export interface PrismTraceEventOutput {
+  outcome?: PrismOccurrenceOutcome | null
   kind: string
   name: string
   status: PrismInferenceStatus
@@ -82,6 +121,7 @@ export interface PrismInferenceOutput {
   diagnostics: unknown[]
   effect_records: Record<string, PrismEffectRecordOutput>
   metadata: Record<string, unknown>
+  provenance?: PrismProvenanceGraph | null
   trace_version: string
 }
 

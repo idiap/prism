@@ -35,50 +35,11 @@ def infer(environment: Environment, context: Context, term: Term) -> Term:
     if isinstance(term, Local):
         return context.lookup(term.index).type
     if isinstance(term, Const):
-        declaration = environment.get(term.name)
-        if len(term.universe_arguments) != len(declaration.universe_parameters):
-            raise KernelError(
-                f"constant `{term.name}` expects {len(declaration.universe_parameters)} "
-                f"universe arguments, got {len(term.universe_arguments)}",
-                code="kernel-universe-arity",
-            )
-        return instantiate_universes(
-            declaration.type,
-            declaration.universe_parameters,
-            term.universe_arguments,
-        )
+        return _infer_constant(environment, context, term)
     if isinstance(term, InductiveRef | ConstructorRef | RecursorRef):
-        declaration = environment.get(term.name)
-        expected_kind = {
-            InductiveRef: "inductive",
-            ConstructorRef: "constructor",
-            RecursorRef: "recursor",
-        }[type(term)]
-        if declaration.kind != expected_kind:
-            raise KernelError(
-                f"`{term.name}` is a {declaration.kind}, not a {expected_kind}",
-                code="kernel-reference-kind",
-            )
-        if declaration.universe_parameters:
-            raise KernelError(
-                f"{expected_kind} `{term.name}` cannot be referenced without universe arguments",
-                code="kernel-universe-arity",
-            )
-        result = declaration.type
-        for argument in term.arguments:
-            result = _infer_application(environment, context, result, argument)
-        return result
+        return _infer_reference(environment, context, term)
     if isinstance(term, Pi):
-        domain_sort = _require_sort(environment, context, term.domain)
-        codomain_sort = _require_sort(
-            environment, context.push(term.name, term.domain), term.codomain
-        )
-        if codomain_sort.level is None:
-            return codomain_sort  # impredicative Prop
-        domain_level = domain_sort.level
-        if domain_level is None:
-            return codomain_sort
-        return Sort(level_max(domain_level, codomain_sort.level))
+        return _infer_pi(environment, context, term)
     if isinstance(term, Lam):
         _require_sort(environment, context, term.domain)
         body_type = infer(environment, context.push(term.name, term.domain), term.body)
@@ -204,3 +165,58 @@ def _zero():
     from .levels import ZERO
 
     return ZERO
+
+
+def _infer_constant(environment: Environment, context: Context, term: Const) -> Term:
+    declaration = environment.get(term.name)
+    if len(term.universe_arguments) != len(declaration.universe_parameters):
+        raise KernelError(
+            f"constant `{term.name}` expects {len(declaration.universe_parameters)} "
+            f"universe arguments, got {len(term.universe_arguments)}",
+            code="kernel-universe-arity",
+        )
+    return instantiate_universes(
+        declaration.type,
+        declaration.universe_parameters,
+        term.universe_arguments,
+    )
+
+
+def _infer_reference(
+    environment: Environment,
+    context: Context,
+    term: InductiveRef | ConstructorRef | RecursorRef,
+) -> Term:
+    declaration = environment.get(term.name)
+    expected_kind = {
+        InductiveRef: "inductive",
+        ConstructorRef: "constructor",
+        RecursorRef: "recursor",
+    }[type(term)]
+    if declaration.kind != expected_kind:
+        raise KernelError(
+            f"`{term.name}` is a {declaration.kind}, not a {expected_kind}",
+            code="kernel-reference-kind",
+        )
+    if declaration.universe_parameters:
+        raise KernelError(
+            f"{expected_kind} `{term.name}` cannot be referenced without universe arguments",
+            code="kernel-universe-arity",
+        )
+    result = declaration.type
+    for argument in term.arguments:
+        result = _infer_application(environment, context, result, argument)
+    return result
+
+
+def _infer_pi(environment: Environment, context: Context, term: Pi) -> Term:
+    domain_sort = _require_sort(environment, context, term.domain)
+    codomain_sort = _require_sort(
+        environment, context.push(term.name, term.domain), term.codomain
+    )
+    if codomain_sort.level is None:
+        return codomain_sort  # impredicative Prop
+    domain_level = domain_sort.level
+    if domain_level is None:
+        return codomain_sort
+    return Sort(level_max(domain_level, codomain_sort.level))

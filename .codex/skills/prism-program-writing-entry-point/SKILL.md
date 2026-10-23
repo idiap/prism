@@ -27,7 +27,7 @@ Use this skill with every applicable specialized skill for end-to-end work. Do n
 1. Read `notes/CORE_PRINCIPLES.md`, the relevant sections of `notes/SYNTAX.md`, and the closest executable example under `examples/language/`. Treat current executable examples as the source of truth for supported syntax.
 2. Define the useful domain result, real inputs, domain types, propositions, failures, effects, permissions, and required assurance level before choosing orchestration.
 3. Prefer pure functions, typed transformations, strict inference, deterministic validators, and kernel checking. Add material inference or generation only where deterministic methods are inadequate.
-4. Keep `Generated[T]`, `Evidence[T]`, `Computed[T]`, `Supported[P]`, `Validated[...]`, `Proof[P]`, and `Verified[...]` distinct. No provenance category implies assurance.
+4. Keep `Assessment[P]` distinct from accepted `Supported[P]`. Keep `Generated[T]`, `Evidence[T]`, `Computed[T]`, `Supported[P]`, `Validated[...]`, `Proof[P]`, and `Verified[...]` distinct. No provenance category implies assurance.
 
 ## Keep the program complete and minimal
 
@@ -59,7 +59,7 @@ Keep a smaller program in fewer files when separation would create empty or sing
 - Let `main` receive runtime capabilities and variable inputs explicitly.
 - Import, configure, and invoke rather than duplicating declarations.
 - Use `solve workflow` for an ordinary executable workflow.
-- Use `solve Reasoning(arguments) using materialized_workflow(arguments)` when executing a declared reasoning plan so the runtime checks that the workflow materializes the requested reasoning and returns its result type.
+- Use `solve Reasoning(arguments) using materialized_workflow(arguments)` when executing a declared reasoning plan so the runtime checks the resolved reasoning identity, generic specialization, exact arguments, and result contract.
 - Use `execute` only when the caller needs the typed execution trace rather than just the domain result.
 
 ## Validate before delivery
@@ -72,5 +72,7 @@ uv run prism compile path/to/main.prism
 uv run prism run path/to/main.prism --handler fake
 uv run pytest path/to/relevant_test.py
 ```
+
+Inspect the shared occurrence contracts and observed outcomes in CLI/editor output: classification, actual producer/ancestors, and assurance remain independent. Fixed pure helpers need no abstract binding. Check execution completion separately from contract satisfaction and claim acceptance. Regenerate unsupported persisted traces (current version `11`).
 
 Confirm that no placeholder or unused declaration remains, every effect has explicit authority, all generated or supported values cross an explicit validation or proof boundary before stronger use, and the program returns the requested domain value.

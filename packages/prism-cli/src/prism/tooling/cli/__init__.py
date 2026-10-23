@@ -35,6 +35,7 @@ from prism.runtime import (
     run as run_program,
 )
 from prism.runtime.replay import effect_record_from_dict
+from prism.runtime.results import require_supported_trace
 from prism.sdk.runtime import (
     LocalResourceResolver,
     load_workspace_knowledge,
@@ -125,6 +126,7 @@ def check(
             "path": str(program_file),
             "declarations": sorted(checked.globals),
             "proof_goals": checked.proof_goals,
+            "occurrence_contracts": list(checked.occurrence_contracts.values()),
             "core_module": (
                 {
                     "format": core_module.core_format_version,
@@ -279,6 +281,11 @@ def verify_run_command(
     replay_mode = cast(Literal["offline", "live"], mode)
     payload = json.loads(result_file.read_text(encoding="utf-8"))
     try:
+        require_supported_trace(payload)
+    except ValueError as exc:
+        emit_json({"status": "failed", "diagnostics": [str(exc)]})
+        raise typer.Exit(1) from exc
+    try:
         module_report = _verify_checked_module(payload)
     except KernelError as exc:
         emit_json(
@@ -304,19 +311,7 @@ def verify_run_command(
     recorder.records.update(records)
     handler = None
     if mode == "live":
-        handlers: list[Any] = [PythonEffectHandler()]
-        record_handlers = {record.invocation.handler for record in records.values()}
-        if "codex" in record_handlers:
-            from prism.adapters.codex import CodexEffectHandler
-
-            handlers.append(CodexEffectHandler.from_environment())
-        if "litellm" in record_handlers:
-            from prism.adapters.litellm import LiteLLMEffectHandler
-
-            handlers.append(LiteLLMEffectHandler.from_environment())
-        if "fake" in record_handlers:
-            handlers.append(FakeEffectHandler.accepting_common_standards())
-        handler = CompositeEffectHandler(handlers)
+        handler = _live_replay_handler(records)
     service = EffectReplayService(recorder, handler=handler)
     reports = [service.verify(record, mode=replay_mode) for record in records.values()]
     response = {
@@ -448,3 +443,19 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def _live_replay_handler(records) -> CompositeEffectHandler:
+    handlers: list[Any] = [PythonEffectHandler()]
+    record_handlers = {record.invocation.handler for record in records.values()}
+    if "codex" in record_handlers:
+        from prism.adapters.codex import CodexEffectHandler
+
+        handlers.append(CodexEffectHandler.from_environment())
+    if "litellm" in record_handlers:
+        from prism.adapters.litellm import LiteLLMEffectHandler
+
+        handlers.append(LiteLLMEffectHandler.from_environment())
+    if "fake" in record_handlers:
+        handlers.append(FakeEffectHandler.accepting_common_standards())
+    return CompositeEffectHandler(handlers)

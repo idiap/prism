@@ -6,13 +6,29 @@
 """Layer 2: typed core language contracts."""
 
 from .bindings import Binding, BindingError, BindingScope
-from .declarations import CallableContract, Parameter, RecordContract
+from .declarations import (
+    CallableContract,
+    Parameter,
+    ReasoningInvocationContract,
+    RecordContract,
+)
 from .modules import (
     InMemoryModuleLoader,
     LanguageModule,
     ModuleLoader,
     ModuleResolver,
     ModuleSource,
+    TaxonomySource,
+)
+from .occurrences import (
+    AssuranceRequirement,
+    OccurrenceContract,
+    OriginConstraint,
+    ReasoningClassification,
+    RelationContract,
+    TaxonomyReference,
+    ValueRequirement,
+    value_requirements,
 )
 from .typed_ast import TypedExpression, TypedModule
 from .types import (
@@ -21,6 +37,7 @@ from .types import (
     PROTECTED_TYPES,
     PROVENANCE_TYPES,
     CoreType,
+    substitute_type,
 )
 from .values import (
     ComputedValue,
@@ -29,6 +46,8 @@ from .values import (
     ExecutionValue,
     GeneratedValue,
     Ok,
+    ProductionActivity,
+    ProvenanceGraph,
     RecordValue,
     RefinementAttemptValue,
     RefinementFailureValue,
@@ -36,9 +55,21 @@ from .values import (
     RefinementPolicyValue,
     TypedValue,
     ValidatedValue,
+    ValueReference,
 )
 
 __all__ = [
+    "ProductionActivity",
+    "ValueReference",
+    "ProvenanceGraph",
+    "AssuranceRequirement",
+    "OccurrenceContract",
+    "OriginConstraint",
+    "ReasoningClassification",
+    "RelationContract",
+    "TaxonomyReference",
+    "ValueRequirement",
+    "value_requirements",
     "ASSURANCE_TYPES",
     "BUILTIN_TYPES",
     "PROTECTED_TYPES",
@@ -49,6 +80,7 @@ __all__ = [
     "CallableContract",
     "ComputedValue",
     "CoreType",
+    "substitute_type",
     "Err",
     "DependentPair",
     "ExecutionValue",
@@ -58,9 +90,11 @@ __all__ = [
     "ModuleLoader",
     "ModuleResolver",
     "ModuleSource",
+    "TaxonomySource",
     "Ok",
     "Parameter",
     "RecordContract",
+    "ReasoningInvocationContract",
     "RecordValue",
     "RefinementAttemptValue",
     "RefinementFailureValue",

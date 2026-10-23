@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping
 
 from prism.language.core import Binding as CoreBinding
@@ -19,6 +19,8 @@ from prism.language.core import (
     TypedModule,
 )
 from prism.language.core import Parameter as CoreParameter
+from prism.language.core.indices import ValueIndex
+from prism.language.core.occurrences import OccurrenceContract, ReasoningClassification
 from prism.language.kernel import CheckedModule
 from prism.language.kernel import Term as KernelTerm
 from prism.language.verification import ProofGoal
@@ -46,6 +48,13 @@ class CheckedProgram:
     module_hashes: Mapping[str, str]
     checked_module: CheckedModule
     expression_terms: Mapping[int, KernelTerm]
+    expression_proof_bindings: Mapping[int, tuple[ValueIndex, ...]] = field(
+        default_factory=dict
+    )
+    occurrence_contracts: Mapping[int, OccurrenceContract] = field(default_factory=dict)
+    method_classifications: Mapping[str, ReasoningClassification] = field(
+        default_factory=dict
+    )
 
 
 def check(
@@ -84,6 +93,9 @@ def elaborate(program: CheckedProgram) -> TypedModule:
         callable_origins=program.callable_origins,
         checked_module=program.checked_module,
         expression_terms=program.expression_terms,
+        expression_proof_bindings=program.expression_proof_bindings,
+        occurrence_contracts=program.occurrence_contracts,
+        method_classifications=program.method_classifications,
     )
 
 
@@ -113,31 +125,30 @@ def _builtin_callable_contracts() -> dict[str, CallableContract]:
             ("A", "B"),
             (
                 ("evidence", "Evidence[A]"),
-                ("value", "B"),
-                ("transformation", "String"),
+                ("transformation", "A -> B"),
             ),
             "Evidence[B]",
             (),
         ),
         "compute": (
-            ("A",),
+            ("A", "B"),
             (
                 ("value", "A"),
-                ("procedure", "String"),
+                ("procedure", "A -> B"),
             ),
-            "Computed[A]",
+            "Computed[B]",
             (),
         ),
         "connect": (
-            (),
+            ("A",),
             (("identifier", "String"),),
-            "Connection[Any]",
+            "Connection[A]",
             (),
         ),
         "data_source": (
-            (),
+            ("A",),
             (("identifier", "String"),),
-            "Source[Any]",
+            "Source[A]",
             (),
         ),
         "hooks_artifact": (
@@ -160,9 +171,9 @@ def _builtin_callable_contracts() -> dict[str, CallableContract]:
             (),
         ),
         "embed": (
-            (),
+            ("A",),
             (("path", "String"),),
-            "Resource[Any]",
+            "Resource[A]",
             (),
         ),
         "generate": (
@@ -176,9 +187,9 @@ def _builtin_callable_contracts() -> dict[str, CallableContract]:
             ("AI.Generate",),
         ),
         "graph_source": (
-            (),
+            ("A",),
             (("identifier", "String"),),
-            "GraphSource[Any]",
+            "GraphSource[A]",
             (),
         ),
         "inline_resource": (
@@ -213,19 +224,32 @@ def _builtin_callable_contracts() -> dict[str, CallableContract]:
             ("A", "B"),
             (
                 ("evidence", "Evidence[A]"),
-                ("value", "B"),
-                ("transformation", "String"),
+                ("transformation", "A -> B"),
             ),
             "Evidence[B]",
             (),
         ),
-        "material_policy": (
+        "accept_assessment": ((), (("explanation", "String"),), "PolicyDecision", ()),
+        "reject_assessment": ((), (("explanation", "String"),), "PolicyDecision", ()),
+        "inconclusive_assessment": (
             (),
+            (("explanation", "String"),),
+            "PolicyDecision",
+            (),
+        ),
+        "accept_support": (
+            ("P",),
+            (("assessment", "Assessment[P]"),),
+            "Result[Supported[P], SupportError]",
+            (),
+        ),
+        "material_policy": (
+            ("A", "P", "E"),
             (
                 ("identifier", "String"),
-                ("require", "List[Bool]"),
+                ("evaluator", "Any"),
             ),
-            "Any",
+            "MaterialPolicy[A, P, E]",
             (),
         ),
         "refinement_policy": (
@@ -292,12 +316,17 @@ def _builtin_callable_contracts() -> dict[str, CallableContract]:
             "Result[A, ToolError]",
             ("Tool.Call",),
         ),
+        "validator": (
+            ("A", "P"),
+            (("check", "(value: A) -> Bool"),),
+            "Validator[value: A, P]",
+            (),
+        ),
         "validate": (
             ("A", "P"),
             (
                 ("value", "A"),
-                ("validator", "String"),
-                ("require", "List[Bool]"),
+                ("validator", "Validator[value: A, P]"),
             ),
             "Result[Validated[value: A, P], ValidationError]",
             (),
@@ -349,6 +378,10 @@ def _builtin_bindings(
         "kernel",
         "map_evidence",
         "material_policy",
+        "accept_assessment",
+        "reject_assessment",
+        "inconclusive_assessment",
+        "accept_support",
         "refinement_policy",
         "observe",
         "claim",
@@ -358,6 +391,7 @@ def _builtin_bindings(
         "resource_evidence",
         "skill_artifact",
         "tool_call",
+        "validator",
         "validate",
         "verify",
     }

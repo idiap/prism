@@ -10,7 +10,11 @@ type ReleaseCandidate:
 def ready(candidate: ReleaseCandidate) -> Bool:
     return candidate.tests_passed and candidate.approved
 
+def Ready(candidate: ReleaseCandidate) -> Prop
+
+release_validator = validator[value: ReleaseCandidate, Ready(value)](ready)
+
 candidate = ReleaseCandidate(tests_passed = True, approved = True)
 
-def main() -> Bool:
-    return ready(candidate)
+def main() -> Result[Validated[value: ReleaseCandidate, Ready(value)], ValidationError]:
+    return validate[Ready(candidate)](candidate, validator = release_validator)

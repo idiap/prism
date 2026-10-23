@@ -15,4 +15,7 @@ type AbductionProtocol[Background, Hypothesis, Observation] = (
 
 type Abductive[Hypothesis, Background, Observation] = (
     source: AbductionInput[Background, Observation],
-) -> Hypothesis
+) -> Hypothesis with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [abductive]

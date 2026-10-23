@@ -68,7 +68,7 @@ refinement_loop/
 
 Start with the value that the application must return.
 
-```prism
+```prism title="Explanatory fragment"
 Validated[
     value: Computed[PlanHypothesis],
     SafeUnderModel(value),
@@ -103,7 +103,7 @@ trajectory bounds, individual constraint results, and the state carried through
 the loop. The abstract propositions name the claims that later validators and
 relations establish.
 
-```prism title="types.prism"
+```prism title="types.prism" source="examples/language/refinement_loop/types.prism"
 from prism.reasoning.methods.abductive import AbductionInput
 
 type Burn:
@@ -237,6 +237,7 @@ type RefineTrajectory = (TrajectoryRefinementState) -> LunarSource
 type LunarLandingError:
     | ModelFailure
     | ValidationError
+    | SupportError
 ```
 
 Several aliases make the later topology readable.
@@ -260,7 +261,7 @@ four burns, evaluate the mission constraints, and record a counterexample.
 <details>
 <summary>Show the complete simulator</summary>
 
-```prism title="simulation.prism"
+```prism title="simulation.prism" source="examples/language/refinement_loop/simulation.prism"
 import examples.language.refinement_loop.types as types
 from prism.reasoning.methods.deductive import DeductionInput
 
@@ -290,9 +291,9 @@ def advance_state(
         fuel = state.fuel - duration * burn.throttle * mission.fuel_burn_rate,
     )
 
-def simulate_trajectory(
+def integrate_trajectory(
     plan: types.PlanHypothesis,
-) -> Computed[types.TrajectoryBounds]:
+) -> types.TrajectoryBounds:
     mission = plan.mission
     initial = types.LanderState(
         x = mission.initial_x,
@@ -316,12 +317,18 @@ def simulate_trajectory(
         terminal_entry_vy_upper_bound = before_terminal.vy,
         peak_thrust_upper_bound = mission.max_thrust,
     )
-    return compute(trajectory, procedure = "lunar-trajectory-integrator-v1")
+    return trajectory
 
-def check_constraints(
+def simulate_trajectory(
+    plan: types.PlanHypothesis,
+) -> Computed[types.TrajectoryBounds]:
+    return compute(plan, procedure = integrate_trajectory)
+
+
+def evaluate_constraints(
     trajectory: Computed[types.TrajectoryBounds],
     mission: types.MissionConstraints,
-) -> Computed[types.ConstraintChecks]:
+) -> types.ConstraintChecks:
     bounds = trajectory.value
     checks = types.ConstraintChecks(
         inside_landing_zone = (
@@ -347,7 +354,14 @@ def check_constraints(
         engine_limit_safe = bounds.peak_thrust_upper_bound <= mission.max_thrust,
         fuel_nonnegative = bounds.fuel_remaining >= 0.0,
     )
-    return compute(checks, procedure = "lunar-constraint-checker-v1")
+    return checks
+
+def check_constraints(
+    trajectory: Computed[types.TrajectoryBounds],
+    mission: types.MissionConstraints,
+) -> Computed[types.ConstraintChecks]:
+    return compute(trajectory, mission, procedure = evaluate_constraints)
+
 
 def build_landing_assessment(
     plan: types.AcceptedPlan,
@@ -464,6 +478,26 @@ def check_trajectory(
         checks,
     )
 
+def safe_under_model(computed: Computed[types.PlanHypothesis]) -> Bool:
+    plan = computed.value
+    trajectory = simulate_trajectory(plan)
+    checks = check_constraints(trajectory, plan.mission).value
+    return (
+        checks.inside_landing_zone
+        and checks.horizontal_speed_safe
+        and checks.vertical_speed_safe
+        and checks.touchdown_altitude_safe
+        and checks.attitude_safe
+        and checks.fuel_reserve_safe
+        and checks.terrain_clearance_safe
+        and checks.engine_limit_safe
+        and checks.fuel_nonnegative
+    )
+
+safe_plan_validator = validator[
+    value: Computed[types.PlanHypothesis], types.SafeUnderModel(value)
+](safe_under_model)
+
 def validate_safe_plan(
     source: DeductionInput[types.LandingAssessment],
 ) -> Result[
@@ -478,8 +512,7 @@ def validate_safe_plan(
         types.SafeUnderModel(computed)
     ](
         computed,
-        validator = "lunar-lander-simulator-v1",
-        require = [source.context.accepted],
+        validator = safe_plan_validator,
     )
 ```
 
@@ -487,25 +520,25 @@ def validate_safe_plan(
 
 The simulator introduces provenance at the exact computation boundaries.
 
-```prism
-return compute(trajectory, procedure = "lunar-trajectory-integrator-v1")
+```prism title="Explanatory fragment"
+return compute(plan, procedure = integrate_trajectory)
 ```
 
 The constraint checker uses another named procedure. Neither `Computed`
 value claims safety. The final function crosses the assurance boundary only
-when every Boolean in the assessment is true.
+when the registered predicate accepts the actual computed plan.
 
-```prism
+```prism title="Explanatory fragment"
 return validate[
     SafeUnderModel(computed)
 ](
     computed,
-    validator = "lunar-lander-simulator-v1",
-    require = [source.context.accepted],
+    validator = safe_plan_validator,
 )
 ```
 
-A failed requirement produces `ValidationError`. The application therefore
+The registered `safe_under_model` validator reruns the deterministic checks on
+the actual final plan. A false result produces `ValidationError`. The application therefore
 cannot return a safe plan after the loop exhausts its bound without reaching an
 accepted assessment.
 
@@ -518,7 +551,7 @@ authority over numeric burn controls.
 <details>
 <summary>Show the complete optimizer</summary>
 
-```prism title="optimization.prism"
+```prism title="optimization.prism" source="examples/language/refinement_loop/optimization.prism"
 from examples.language.refinement_loop.simulation import simulate_trajectory
 from examples.language.refinement_loop.types import Burn, PlanHypothesis
 
@@ -768,7 +801,7 @@ needs linguistic judgment.
 Create `reasoning.prism`. This file describes epistemic intent and data flow.
 It contains no model, skill, policy, effect, failure, or provider choice.
 
-```prism title="reasoning.prism"
+```prism title="reasoning.prism" source="examples/language/refinement_loop/reasoning.prism"
 from examples.language.refinement_loop.types import (
     AcceptedMission,
     AcceptedPlan,
@@ -880,7 +913,7 @@ example contains the following generated module.
 <details>
 <summary>Show the generated skill module</summary>
 
-```prism title="lunar_refinement_skill.prism"
+```prism title="lunar_refinement_skill.prism" source="examples/language/refinement_loop/lunar_refinement_skill.prism"
 from examples.language.refinement_loop.types import ExplainRefinement
 
 lunar_refinement_narrator_skill: Skill[ExplainRefinement] = skill_artifact[ExplainRefinement](
@@ -907,12 +940,13 @@ abductive candidate, its relation, and the state transition.
 <details>
 <summary>Show the complete refinement module</summary>
 
-```prism title="refinement.prism"
+```prism title="refinement.prism" source="examples/language/refinement_loop/refinement.prism"
 from examples.language.refinement_loop.lunar_refinement_skill import lunar_refinement_narrator_skill
 from examples.language.refinement_loop.types import (
     AcceptedPlan,
     ExplainRefinement,
     LunarSource,
+    MissionConstraints,
     LunarLandingError,
     PlanHypothesis,
     PlanNarrative,
@@ -939,10 +973,10 @@ agent refinement_narrator(
     ! {AI.Generate, Context.Disclose}:
     skills: Skills[ExplainRefinement] = [lunar_refinement_narrator_skill]
 
-def assemble_plan_hypothesis(
+def build_plan_hypothesis(
     generated: Generated[PlanNarrative],
     source: LunarSource,
-) -> Computed[PlanHypothesis]:
+) -> PlanHypothesis:
     requested = source.observation.value
     plan = PlanHypothesis(
         mission = source.background.value,
@@ -959,37 +993,62 @@ def assemble_plan_hypothesis(
         descent = requested.descent,
         terminal = requested.terminal,
     )
-    return compute(plan, procedure = "lunar-plan-control-assembly-v1")
+    return plan
+
+def assemble_plan_hypothesis(
+    generated: Generated[PlanNarrative],
+    source: LunarSource,
+) -> Computed[PlanHypothesis]:
+    return compute(generated, source, procedure = build_plan_hypothesis)
+
+
+def plan_well_formed(computed: Computed[PlanHypothesis]) -> Bool:
+    plan = computed.value
+    return (
+        plan.strategy != ""
+        and plan.coast.duration_seconds > 0.0
+        and plan.coast.throttle >= 0.0
+        and plan.coast.throttle <= 1.0
+        and plan.braking.duration_seconds > 0.0
+        and plan.braking.throttle >= 0.0
+        and plan.braking.throttle <= 1.0
+        and plan.descent.duration_seconds > 0.0
+        and plan.descent.throttle >= 0.0
+        and plan.descent.throttle <= 1.0
+        and plan.terminal.duration_seconds > 0.0
+        and plan.terminal.throttle >= 0.0
+        and plan.terminal.throttle <= 1.0
+    )
+
+plan_validator = validator[value: Computed[PlanHypothesis], PlanWellFormed(value)](plan_well_formed)
+
+type MissionAlignment:
+    plan: Computed[PlanHypothesis]
+    source: LunarSource
+
+def MissionAligned(value: MissionAlignment) -> Prop
+
+def mission_aligned(value: MissionAlignment) -> Bool:
+    return value.plan.value.mission == value.source.background.value
+
+mission_alignment_validator = validator[
+    value: MissionAlignment, MissionAligned(value)
+](mission_aligned)
 
 def validate_plan_hypothesis(
     computed: Computed[PlanHypothesis],
     source: LunarSource,
 ) -> Result[AcceptedPlan, ValidationError]:
-    plan = computed.value
-    return validate[PlanWellFormed(computed)](
-        computed,
-        validator = "lunar-plan-v1",
-        require = [
-            plan.mission == source.background.value,
-            plan.strategy != "",
-            plan.coast.duration_seconds > 0.0,
-            plan.coast.throttle >= 0.0,
-            plan.coast.throttle <= 1.0,
-            plan.braking.duration_seconds > 0.0,
-            plan.braking.throttle >= 0.0,
-            plan.braking.throttle <= 1.0,
-            plan.descent.duration_seconds > 0.0,
-            plan.descent.throttle >= 0.0,
-            plan.descent.throttle <= 1.0,
-            plan.terminal.duration_seconds > 0.0,
-            plan.terminal.throttle >= 0.0,
-            plan.terminal.throttle <= 1.0,
-        ],
+    alignment = MissionAlignment(plan = computed, source = source)
+    accepted_alignment = try validate[MissionAligned(alignment)](
+        alignment, validator = mission_alignment_validator,
     )
+    return validate[PlanWellFormed(computed)](computed, validator = plan_validator)
 
-def prepare_refinement(
+def revise_request(
+    previous: PlanHypothesis,
     state: TrajectoryRefinementState,
-) -> LunarSource:
+) -> PlanHypothesis:
     prior_candidate = state.candidate.value.value
     optimized = refine_plan(prior_candidate)
     revised = PlanHypothesis(
@@ -1007,16 +1066,44 @@ def prepare_refinement(
         descent = optimized.descent,
         terminal = optimized.terminal,
     )
+    return revised
+
+
+def prepare_refinement(state: TrajectoryRefinementState) -> LunarSource:
     observation = map_evidence(
-        state.source.observation,
-        value = revised,
-        transformation = (
-            "deterministic simulator counterexample attached to next abductive request"
-        ),
+        state.source.observation, state, transformation = revise_request,
     )
     return AbductionInput(
         background = state.source.background,
         observation = observation,
+    )
+
+def assess_trajectory_hypothesis(
+    evidence: Evidence[PlanHypothesis],
+    mission: MissionConstraints,
+    proposed: Computed[PlanHypothesis],
+    prior: PlanHypothesis,
+) -> PolicyDecision:
+    hypothesis = proposed.value
+    feedback = evidence.value
+    accepted = (
+        feedback == prior
+        and hypothesis.mission == mission
+        and feedback.mission == mission
+        and hypothesis.simulator_feedback.active == feedback.simulator_feedback.active
+        and hypothesis.simulator_feedback.assessment_time == feedback.simulator_feedback.assessment_time
+        and hypothesis.simulator_feedback.constraints == feedback.simulator_feedback.constraints
+        and hypothesis.prior_touchdown_x == feedback.prior_touchdown_x
+        and hypothesis.prior_touchdown_altitude == feedback.prior_touchdown_altitude
+        and hypothesis.prior_horizontal_speed == feedback.prior_horizontal_speed
+        and hypothesis.prior_vertical_speed == feedback.prior_vertical_speed
+        and hypothesis.prior_lander_angle == feedback.prior_lander_angle
+        and hypothesis.prior_fuel_remaining == feedback.prior_fuel_remaining
+    )
+    return (
+        accept_assessment("plan preserves the supplied mission and simulator feedback")
+        if accepted
+        else reject_assessment("plan does not preserve the supplied mission and feedback")
     )
 
 def support_trajectory_hypothesis(
@@ -1024,35 +1111,19 @@ def support_trajectory_hypothesis(
     target: AcceptedPlan,
 ) -> Result[
     Supported[PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value)],
-    Never,
+    LunarLandingError,
 ]:
-    hypothesis = target.value.value
-    feedback = source.observation.value
     policy: MaterialPolicy[
         PlanHypothesis,
         PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value),
         Never,
-    ] = material_policy(
-        "lunar-trajectory-abduction-v1",
-        require = [
-            hypothesis.mission == source.background.value,
-            feedback.mission == source.background.value,
-            hypothesis.simulator_feedback.active == feedback.simulator_feedback.active,
-            hypothesis.simulator_feedback.assessment_time == feedback.simulator_feedback.assessment_time,
-            hypothesis.simulator_feedback.constraints == feedback.simulator_feedback.constraints,
-            hypothesis.prior_touchdown_x == feedback.prior_touchdown_x,
-            hypothesis.prior_touchdown_altitude == feedback.prior_touchdown_altitude,
-            hypothesis.prior_horizontal_speed == feedback.prior_horizontal_speed,
-            hypothesis.prior_vertical_speed == feedback.prior_vertical_speed,
-            hypothesis.prior_lander_angle == feedback.prior_lander_angle,
-            hypothesis.prior_fuel_remaining == feedback.prior_fuel_remaining,
-        ],
-    )
-    return source.observation |~[policy] PlausiblyExplainsFeedback(
+    ] = material_policy("lunar-trajectory-abduction-v1", evaluator = assess_trajectory_hypothesis)
+    assessment = try source.observation |~[policy] PlausiblyExplainsFeedback(
         source.background.value,
         target.value,
         source.observation.value,
     )
+    return accept_support(assessment)
 
 workflow materialize_abductive_plan(
     source: LunarSource,
@@ -1099,15 +1170,17 @@ The abstract `SupportTrajectoryHypothesis` relation requires material support.
 Its implementation creates a `MaterialPolicy` and checks that the candidate
 preserves the mission, counterexample, and prior trajectory values.
 
-```prism
-return source.observation |~[policy] PlausiblyExplainsFeedback(
+```prism title="Explanatory fragment"
+assessment = try source.observation |~[policy] PlausiblyExplainsFeedback(
     source.background.value,
     target.value,
     source.observation.value,
 )
+return accept_support(assessment)
 ```
 
-This certificate is `Supported[P]`. Safety receives a separate deterministic
+The assessment can be accepted, rejected, or inconclusive; only accepted
+`accept_support` produces the `Supported[P]` certificate. Safety receives a separate deterministic
 validation after simulation.
 
 ## Bind every abstract occurrence
@@ -1115,7 +1188,7 @@ validation after simulation.
 Create `materialization.prism`. A direct named call binds each occurrence and
 the attached relation exactly once.
 
-```prism title="materialization.prism"
+```prism title="materialization.prism" source="examples/language/refinement_loop/materialization.prism"
 from examples.language.refinement_loop.simulation import (
     check_trajectory,
     validate_safe_plan,
@@ -1155,7 +1228,7 @@ Create `main.prism`. The entry point supplies concrete mission data, validates
 the mission, records the initial plan as evidence, and executes the declared
 reasoning through its materialization.
 
-```prism title="main.prism"
+```prism title="main.prism" source="examples/language/refinement_loop/main.prism"
 from examples.language.refinement_loop.materialization import lunar_landing_refinement
 from examples.language.refinement_loop.reasoning import LunarLandingRefinement
 from examples.language.refinement_loop.types import (
@@ -1169,6 +1242,11 @@ from examples.language.refinement_loop.types import (
     SafeUnderModel,
 )
 from prism.reasoning.methods.abductive import AbductionInput
+
+def mission_check(mission: MissionConstraints) -> Bool:
+    return mission.description != ""
+
+mission_validator = validator[value: MissionConstraints, MissionAccepted(value)](mission_check)
 
 def main(
     model_access: ModelGenerate,
@@ -1198,8 +1276,7 @@ def main(
     )
     mission = try validate[MissionAccepted(mission_specification)](
         mission_specification,
-        validator = "lunar-mission-v1",
-        require = [mission_specification.description != ""],
+        validator = mission_validator,
     )
     initial_hypothesis = PlanHypothesis(
         mission = mission.value,
@@ -1238,7 +1315,7 @@ source.
 The `main` signature exposes both runtime permissions and the complete effect
 row. Its last line invokes the reasoning and executable workflow together.
 
-```prism
+```prism title="Explanatory fragment"
 return solve LunarLandingRefinement(source) using lunar_landing_refinement(source)
 ```
 
@@ -1271,7 +1348,9 @@ Run the complete loop with deterministic synthetic generation.
 uv run prism run examples/language/refinement_loop/main.prism --handler fake
 ```
 
-The run finishes with `"status": "accepted"`. Its trace records the two
+With the fake handler, five iterations finish with `"status": "accepted"` and
+synthetic generation visible in the graph. The result is validation under the
+simulator model, not a formal safety proof or physical-world guarantee. Its trace records the two
 permissions, mission validation, observed evidence, materialized reasoning,
 each repeated occurrence, material support, deterministic computations, and
 final validation.

@@ -19,6 +19,7 @@ dependencies = [
   "prism-language==1.0.0",
   "prism-transpiler==1.0.0",
   "prism-runtime==1.0.0",
+  "prism-platform==1.0.0",
   "prism-sdk[runtime]==1.0.0",
   "prism-adapter-codex==1.0.0",
   "prism-adapter-litellm==1.0.0",

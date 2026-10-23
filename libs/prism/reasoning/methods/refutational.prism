@@ -9,4 +9,7 @@ type RefutationInput[Subject, Search]:
 
 type Refutational[Conclusion, Subject, Search] = (
     source: RefutationInput[Subject, Search],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = evaluation_and_judgment
+    reasoning_archetypes = [refutational]

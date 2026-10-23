@@ -8,6 +8,7 @@ from examples.language.refinement_loop.types import (
     AcceptedPlan,
     ExplainRefinement,
     LunarSource,
+    MissionConstraints,
     LunarLandingError,
     PlanHypothesis,
     PlanNarrative,
@@ -34,10 +35,10 @@ agent refinement_narrator(
     ! {AI.Generate, Context.Disclose}:
     skills: Skills[ExplainRefinement] = [lunar_refinement_narrator_skill]
 
-def assemble_plan_hypothesis(
+def build_plan_hypothesis(
     generated: Generated[PlanNarrative],
     source: LunarSource,
-) -> Computed[PlanHypothesis]:
+) -> PlanHypothesis:
     requested = source.observation.value
     plan = PlanHypothesis(
         mission = source.background.value,
@@ -54,37 +55,62 @@ def assemble_plan_hypothesis(
         descent = requested.descent,
         terminal = requested.terminal,
     )
-    return compute(plan, procedure = "lunar-plan-control-assembly-v1")
+    return plan
+
+def assemble_plan_hypothesis(
+    generated: Generated[PlanNarrative],
+    source: LunarSource,
+) -> Computed[PlanHypothesis]:
+    return compute(generated, source, procedure = build_plan_hypothesis)
+
+
+def plan_well_formed(computed: Computed[PlanHypothesis]) -> Bool:
+    plan = computed.value
+    return (
+        plan.strategy != ""
+        and plan.coast.duration_seconds > 0.0
+        and plan.coast.throttle >= 0.0
+        and plan.coast.throttle <= 1.0
+        and plan.braking.duration_seconds > 0.0
+        and plan.braking.throttle >= 0.0
+        and plan.braking.throttle <= 1.0
+        and plan.descent.duration_seconds > 0.0
+        and plan.descent.throttle >= 0.0
+        and plan.descent.throttle <= 1.0
+        and plan.terminal.duration_seconds > 0.0
+        and plan.terminal.throttle >= 0.0
+        and plan.terminal.throttle <= 1.0
+    )
+
+plan_validator = validator[value: Computed[PlanHypothesis], PlanWellFormed(value)](plan_well_formed)
+
+type MissionAlignment:
+    plan: Computed[PlanHypothesis]
+    source: LunarSource
+
+def MissionAligned(value: MissionAlignment) -> Prop
+
+def mission_aligned(value: MissionAlignment) -> Bool:
+    return value.plan.value.mission == value.source.background.value
+
+mission_alignment_validator = validator[
+    value: MissionAlignment, MissionAligned(value)
+](mission_aligned)
 
 def validate_plan_hypothesis(
     computed: Computed[PlanHypothesis],
     source: LunarSource,
 ) -> Result[AcceptedPlan, ValidationError]:
-    plan = computed.value
-    return validate[PlanWellFormed(computed)](
-        computed,
-        validator = "lunar-plan-v1",
-        require = [
-            plan.mission == source.background.value,
-            plan.strategy != "",
-            plan.coast.duration_seconds > 0.0,
-            plan.coast.throttle >= 0.0,
-            plan.coast.throttle <= 1.0,
-            plan.braking.duration_seconds > 0.0,
-            plan.braking.throttle >= 0.0,
-            plan.braking.throttle <= 1.0,
-            plan.descent.duration_seconds > 0.0,
-            plan.descent.throttle >= 0.0,
-            plan.descent.throttle <= 1.0,
-            plan.terminal.duration_seconds > 0.0,
-            plan.terminal.throttle >= 0.0,
-            plan.terminal.throttle <= 1.0,
-        ],
+    alignment = MissionAlignment(plan = computed, source = source)
+    accepted_alignment = try validate[MissionAligned(alignment)](
+        alignment, validator = mission_alignment_validator,
     )
+    return validate[PlanWellFormed(computed)](computed, validator = plan_validator)
 
-def prepare_refinement(
+def revise_request(
+    previous: PlanHypothesis,
     state: TrajectoryRefinementState,
-) -> LunarSource:
+) -> PlanHypothesis:
     prior_candidate = state.candidate.value.value
     optimized = refine_plan(prior_candidate)
     revised = PlanHypothesis(
@@ -102,16 +128,44 @@ def prepare_refinement(
         descent = optimized.descent,
         terminal = optimized.terminal,
     )
+    return revised
+
+
+def prepare_refinement(state: TrajectoryRefinementState) -> LunarSource:
     observation = map_evidence(
-        state.source.observation,
-        value = revised,
-        transformation = (
-            "deterministic simulator counterexample attached to next abductive request"
-        ),
+        state.source.observation, state, transformation = revise_request,
     )
     return AbductionInput(
         background = state.source.background,
         observation = observation,
+    )
+
+def assess_trajectory_hypothesis(
+    evidence: Evidence[PlanHypothesis],
+    mission: MissionConstraints,
+    proposed: Computed[PlanHypothesis],
+    prior: PlanHypothesis,
+) -> PolicyDecision:
+    hypothesis = proposed.value
+    feedback = evidence.value
+    accepted = (
+        feedback == prior
+        and hypothesis.mission == mission
+        and feedback.mission == mission
+        and hypothesis.simulator_feedback.active == feedback.simulator_feedback.active
+        and hypothesis.simulator_feedback.assessment_time == feedback.simulator_feedback.assessment_time
+        and hypothesis.simulator_feedback.constraints == feedback.simulator_feedback.constraints
+        and hypothesis.prior_touchdown_x == feedback.prior_touchdown_x
+        and hypothesis.prior_touchdown_altitude == feedback.prior_touchdown_altitude
+        and hypothesis.prior_horizontal_speed == feedback.prior_horizontal_speed
+        and hypothesis.prior_vertical_speed == feedback.prior_vertical_speed
+        and hypothesis.prior_lander_angle == feedback.prior_lander_angle
+        and hypothesis.prior_fuel_remaining == feedback.prior_fuel_remaining
+    )
+    return (
+        accept_assessment("plan preserves the supplied mission and simulator feedback")
+        if accepted
+        else reject_assessment("plan does not preserve the supplied mission and feedback")
     )
 
 def support_trajectory_hypothesis(
@@ -119,35 +173,19 @@ def support_trajectory_hypothesis(
     target: AcceptedPlan,
 ) -> Result[
     Supported[PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value)],
-    Never,
+    LunarLandingError,
 ]:
-    hypothesis = target.value.value
-    feedback = source.observation.value
     policy: MaterialPolicy[
         PlanHypothesis,
         PlausiblyExplainsFeedback(source.background.value, target.value, source.observation.value),
         Never,
-    ] = material_policy(
-        "lunar-trajectory-abduction-v1",
-        require = [
-            hypothesis.mission == source.background.value,
-            feedback.mission == source.background.value,
-            hypothesis.simulator_feedback.active == feedback.simulator_feedback.active,
-            hypothesis.simulator_feedback.assessment_time == feedback.simulator_feedback.assessment_time,
-            hypothesis.simulator_feedback.constraints == feedback.simulator_feedback.constraints,
-            hypothesis.prior_touchdown_x == feedback.prior_touchdown_x,
-            hypothesis.prior_touchdown_altitude == feedback.prior_touchdown_altitude,
-            hypothesis.prior_horizontal_speed == feedback.prior_horizontal_speed,
-            hypothesis.prior_vertical_speed == feedback.prior_vertical_speed,
-            hypothesis.prior_lander_angle == feedback.prior_lander_angle,
-            hypothesis.prior_fuel_remaining == feedback.prior_fuel_remaining,
-        ],
-    )
-    return source.observation |~[policy] PlausiblyExplainsFeedback(
+    ] = material_policy("lunar-trajectory-abduction-v1", evaluator = assess_trajectory_hypothesis)
+    assessment = try source.observation |~[policy] PlausiblyExplainsFeedback(
         source.background.value,
         target.value,
         source.observation.value,
     )
+    return accept_support(assessment)
 
 workflow materialize_abductive_plan(
     source: LunarSource,

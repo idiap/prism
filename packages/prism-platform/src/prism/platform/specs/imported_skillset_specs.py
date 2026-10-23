@@ -234,24 +234,12 @@ class ImportedSkillSpec(BaseModel):
         if Path(tokens[0]).name.lower() not in python_invokers:
             return None
 
-        script_path: str | None = None
-        module: str | None = None
-        entry_subcommand: list[str] = []
         pythonpath: list[str] = []
 
-        remainder = tokens[1:]
-        if len(remainder) >= 2 and remainder[0] == "-m":
-            module = remainder[1]
-            entry_subcommand = remainder[2:]
-        elif remainder:
-            candidate = Path(remainder[0])
-            if not candidate.is_absolute():
-                candidate = install_root / candidate
-            script_path = str(candidate.resolve())
-            entry_subcommand = remainder[1:]
-        else:
+        entrypoint = self._python_entrypoint(tokens, install_root)
+        if entrypoint is None:
             return None
-
+        script_path, module, entry_subcommand = entrypoint
         adapter_kind: Literal[
             "python-script",
             "python-module",
@@ -634,3 +622,20 @@ class ImportedSkillSpec(BaseModel):
             if (base / relative_root).exists():
                 return base
         return candidates[-1]
+
+    def _python_entrypoint(self, tokens, install_root):
+        script_path = None
+        module = None
+        remainder = tokens[1:]
+        if len(remainder) >= 2 and remainder[0] == "-m":
+            module = remainder[1]
+            entry_subcommand = remainder[2:]
+        elif remainder:
+            candidate = Path(remainder[0])
+            if not candidate.is_absolute():
+                candidate = install_root / candidate
+            script_path = str(candidate.resolve())
+            entry_subcommand = remainder[1:]
+        else:
+            return None
+        return script_path, module, entry_subcommand

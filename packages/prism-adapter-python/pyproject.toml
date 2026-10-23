@@ -15,7 +15,7 @@ description = "Typed Python.Call effect handler for Prism backed by Python entry
 license = "MIT"
 license-files = ["LICENSES/MIT.txt"]
 requires-python = ">=3.12"
-dependencies = ["prism-runtime==1.0.0"]
+dependencies = ["prism-language==1.0.0", "prism-runtime==1.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

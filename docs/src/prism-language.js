@@ -51,7 +51,7 @@ Prism.languages.prism = {
       pattern: /(^[\t ]*)(?:type|def|reasoning|workflow|tool|theorem|agent|relation)\b/m,
       lookbehind: true,
     },
-    /\b(?:return|if|else|match|case|try|solve|execute|using|sequence|parallel|choice|repeat|fails|from|import|as|where|by|forall|exists|and|or|not|on|accept|stop)\b/,
+    /\b(?:return|if|else|match|case|try|solve|execute|using|sequence|parallel|choice|repeat|fails|from|import|as|where|with|by|forall|exists|and|or|not|on|accept|stop)\b/,
   ],
   label: {
     pattern: /(^[\t ]*\[\s*)[a-z_][A-Za-z0-9_]*(?=\s*:)/m,

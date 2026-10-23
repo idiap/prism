@@ -13,8 +13,14 @@ def Entails[Premises, Proposition](
 
 type Deductive[Conclusion, Premises] = (
     source: DeductionInput[Premises],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [deductive]
 
 type ProvenDeductive[Conclusion, Premises, Accepted] = (
     source: DeductionInput[Validated[value: Premises, Accepted]],
-) -> Verified[value: Conclusion, Entails(source.context.value, value)]
+) -> Verified[value: Conclusion, Entails(source.context.value, value)] with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [deductive]

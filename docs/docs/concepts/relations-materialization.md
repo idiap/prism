@@ -17,10 +17,9 @@ reasoning topology.
 
 ## Pure reasoning topology
 
-A reasoning declaration may contain reasoning calls, nested reasoning plans,
-and pure structural constructors. It has no `fails` clause or effect row.
+A reasoning declaration may contain method calls and fixed pure, infallible structural helpers or constructors. It has no `fails` clause or effect row.
 
-```prism
+```prism title="Explanatory fragment"
 type Input:
     text: String
 
@@ -49,7 +48,7 @@ materialization and execution tracing.
 A relation gives one epistemic edge an exact source type, target type, and
 certificate type.
 
-```prism
+```prism title="Explanatory fragment"
 type Tested[SourceValue, TargetValue]:
     source: SourceValue
     target: TargetValue
@@ -75,16 +74,18 @@ The standard reasoning library provides these relation declarations.
 | `Calibrate` | The target calibrates the source. |
 | `Transfer` | The target transfers from the source. |
 | `Probe` | The target probes the source. |
-| `Preserve` | The target carries an exact preservation proof. |
+| `Preserve` | The `ExactPreservation` endpoints and certificate require explicit `StateIsEqual` proofs. |
 
 These names describe edge semantics. The certificate type determines the
-assurance carried by the edge.
+assurance carried by the edge. `Preserve` requires supplied proofs; its builder
+does not establish arbitrary domain equality or make unsupported domain values
+representable in the native kernel.
 
 ## Material and strict certificates
 
 An abstract relation can require material support.
 
-```prism
+```prism title="Explanatory fragment"
 def Addresses(draft: Draft, critique: Critique) -> Prop
 
 relation TestsAddressing(
@@ -94,11 +95,13 @@ relation TestsAddressing(
 ```
 
 The result type is `Supported[Addresses(source, target)]`. Its materializer
-must apply an explicit `MaterialPolicy` to evidence.
+must apply an explicit `MaterialPolicy` to evidence and successfully call
+`accept_support` on its accepted assessment. A completed rejected assessment
+cannot certify the relation.
 
 A strict relation can require a kernel proof.
 
-```prism
+```prism title="Explanatory fragment"
 def Correct(candidate: Candidate) -> Prop
 
 relation EstablishesCorrectness(
@@ -115,7 +118,7 @@ proof produced through theorem elaboration and kernel checking.
 Calling a reasoning declaration with named configuration produces a callable
 materialization.
 
-```prism
+```prism title="Explanatory fragment"
 def form_candidate(source: Input) -> Candidate:
     return Candidate(text = source.text)
 
@@ -135,7 +138,8 @@ configured_review = Review(
 )
 ```
 
-Every occurrence and attached relation requires one binding. Extra, missing,
+Every abstract method occurrence and attached relation requires one binding.
+Fixed helpers have no abstract slot. Extra, missing,
 or incompatible bindings fail checking. Concrete occurrence callables may add
 recoverable failures and effects. Prism infers them into the resulting
 `Workflow` type.
@@ -150,7 +154,7 @@ An occurrence may display a concise dependency whose type differs from the
 reasoning method input. An `<occurrence>_input` binding performs the pure
 adaptation.
 
-```prism
+```prism title="Explanatory fragment"
 type Raw:
     text: String
 
@@ -190,7 +194,7 @@ inputs of the configured callable.
 
 A reasoning declaration may hand a guarded value to another reasoner.
 
-```prism
+```prism title="Explanatory fragment"
 type ReviewStatus = Input -> Status
 type RepairStatus = Status -> Status
 
@@ -213,9 +217,10 @@ reasoner.
 ## Solve the declared reasoning
 
 The configured callable constructs a workflow. `solve` checks the successful
-result and materialization identity before execution.
+result, resolved plan identity, specialization, and actual logical arguments
+before accepting the materialization.
 
-```prism
+```prism title="Explanatory fragment"
 def main() -> Status:
     source = Input(text = "candidate")
     flow = configured_review(source)

@@ -29,32 +29,59 @@ class Evidence:
 
 
 @dataclass(frozen=True, slots=True)
-class Supported:
+class PolicyDecision:
+    disposition: str
+    explanation: str
+
+    def __post_init__(self):
+        if self.disposition not in {"accepted", "rejected", "inconclusive"}:
+            raise ValueError("unknown policy disposition")
+
+
+@dataclass(frozen=True, slots=True)
+class Assessment:
     proposition: str
     evidence: Evidence
     policy: str
-    status: str = "accepted"
-    explanation: str = ""
+    decision: PolicyDecision
+    policy_identity: str
+    policy_hash: str
+    claim: Any
+    evidence_reference: str
+
+    @property
+    def disposition(self) -> str:
+        return self.decision.disposition
+
+    @property
+    def explanation(self) -> str:
+        return self.decision.explanation
 
 
-def map_evidence(evidence: Evidence, value: Any, transformation: str) -> Evidence:
-    return Evidence(
-        value,
-        tuple(
-            Provenance(
-                item.source,
-                item.method,
-                item.observed_at,
-                (*item.transformations, transformation),
-                item.assumptions,
-                item.integrity,
-                item.metadata,
-            )
-            for item in evidence.provenance
-        ),
-    )
+@dataclass(frozen=True, slots=True)
+class Supported:
+    assessment: Assessment
 
+    def __post_init__(self):
+        if self.assessment.decision.disposition != "accepted":
+            raise ValueError("Supported requires an accepted assessment")
 
-def combine_evidence(*packets: Evidence, value: Any, transformation: str) -> Evidence:
-    provenance = tuple(item for packet in packets for item in packet.provenance)
-    return map_evidence(Evidence(value, provenance), value, transformation)
+    @property
+    def proposition(self) -> str:
+        return self.assessment.proposition
+
+    @property
+    def evidence(self) -> Evidence:
+        return self.assessment.evidence
+
+    @property
+    def policy(self) -> str:
+        return self.assessment.policy
+
+    @property
+    def explanation(self) -> str:
+        return self.assessment.decision.explanation
+
+    @property
+    def status(self) -> str:
+        return "accepted"

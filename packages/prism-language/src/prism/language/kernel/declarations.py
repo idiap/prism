@@ -237,49 +237,11 @@ def _validate_recursor(environment: Environment, declaration: Declaration) -> No
             code="kernel-recursor-coverage",
         )
     for constructor_name, rule in rules.items():
-        if not 0 <= rule.method_index < recursor_arity:
-            raise KernelError(
-                f"recursor `{declaration.name}` has an invalid method position",
-                code="kernel-recursor-metadata",
-            )
-        constructor_domains = _pi_domains(constructors[constructor_name].type)
-        constructor_arity = len(constructor_domains)
-        if rule.constructor_arity != constructor_arity:
-            raise KernelError(
-                f"recursor rule for `{constructor_name}` has arity "
-                f"{rule.constructor_arity}, expected {constructor_arity}",
-                code="kernel-recursor-metadata",
-            )
-        positions = (
-            *rule.recursive_positions,
-            *(rule.field_positions or ()),
+        _validate_recursor_rule(
+            declaration, recursor_arity, constructor_name, rule, constructors
         )
-        if any(position < 0 or position >= constructor_arity for position in positions):
-            raise KernelError(
-                f"recursor rule for `{constructor_name}` has an invalid field position",
-                code="kernel-recursor-metadata",
-            )
-        for position in rule.recursive_positions:
-            head, _ = unfold_apps(constructor_domains[position])
-            if not (
-                isinstance(head, InductiveRef | Const)
-                and head.name == declaration.inductive_name
-            ):
-                raise KernelError(
-                    f"recursor rule for `{constructor_name}` marks a non-recursive field",
-                    code="kernel-recursor-metadata",
-                )
 
-    family_result = owner.type
-    while isinstance(family_result, Pi):
-        family_result = family_result.codomain
-    if isinstance(family_result, Sort) and family_result.level is None:
-        result_sort = _telescope_result_sort(environment, declaration.type)
-        if result_sort.level is not None:
-            raise KernelError(
-                f"recursor `{declaration.name}` eliminates Prop into data",
-                code="kernel-prop-elimination",
-            )
+    _validate_recursor_elimination(environment, declaration, owner)
 
 
 def _pi_arity(term) -> int:
@@ -310,3 +272,53 @@ def _telescope_result_sort(environment: Environment, term) -> Sort:
             code="kernel-recursor-type",
         )
     return inferred
+
+
+def _validate_recursor_rule(
+    declaration, recursor_arity, constructor_name, rule, constructors
+) -> None:
+    if not 0 <= rule.method_index < recursor_arity:
+        raise KernelError(
+            f"recursor `{declaration.name}` has an invalid method position",
+            code="kernel-recursor-metadata",
+        )
+    constructor_domains = _pi_domains(constructors[constructor_name].type)
+    constructor_arity = len(constructor_domains)
+    if rule.constructor_arity != constructor_arity:
+        raise KernelError(
+            f"recursor rule for `{constructor_name}` has arity "
+            f"{rule.constructor_arity}, expected {constructor_arity}",
+            code="kernel-recursor-metadata",
+        )
+    positions = (
+        *rule.recursive_positions,
+        *(rule.field_positions or ()),
+    )
+    if any(position < 0 or position >= constructor_arity for position in positions):
+        raise KernelError(
+            f"recursor rule for `{constructor_name}` has an invalid field position",
+            code="kernel-recursor-metadata",
+        )
+    for position in rule.recursive_positions:
+        head, _ = unfold_apps(constructor_domains[position])
+        if not (
+            isinstance(head, InductiveRef | Const)
+            and head.name == declaration.inductive_name
+        ):
+            raise KernelError(
+                f"recursor rule for `{constructor_name}` marks a non-recursive field",
+                code="kernel-recursor-metadata",
+            )
+
+
+def _validate_recursor_elimination(environment, declaration, owner) -> None:
+    family_result = owner.type
+    while isinstance(family_result, Pi):
+        family_result = family_result.codomain
+    if isinstance(family_result, Sort) and family_result.level is None:
+        result_sort = _telescope_result_sort(environment, declaration.type)
+        if result_sort.level is not None:
+            raise KernelError(
+                f"recursor `{declaration.name}` eliminates Prop into data",
+                code="kernel-prop-elimination",
+            )

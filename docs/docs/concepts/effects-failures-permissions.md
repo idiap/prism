@@ -26,7 +26,7 @@ runtime implements an effect and preserves the declared type.
 Failures are ordinary typed values. A closed sum collects the errors that a
 caller may receive.
 
-```prism
+```prism title="Explanatory fragment"
 type LoadError:
     | MissingFile(path: String)
     | InvalidConfig(message: String)
@@ -37,7 +37,7 @@ def parse_config(text: String) -> Result[Config, LoadError]
 `try` unwraps `Ok(value)`. An `Err(error)` returns from the enclosing callable
 when the error fits its result type.
 
-```prism
+```prism title="Explanatory fragment"
 def load_config(
     path: Path,
     access: FileRead[path],
@@ -49,7 +49,7 @@ def load_config(
 Prism has no unchecked exceptions in authored source. A workflow lifts a
 component error into its declared `fails` surface.
 
-```prism
+```prism title="Explanatory fragment"
 workflow load_application(
     path: Path,
     access: FileRead[path],
@@ -88,7 +88,7 @@ File.Read[repository.root]
 A permission is an unforgeable value supplied by the runtime. The callable
 passes it to the operation that needs authority.
 
-```prism
+```prism title="Explanatory fragment"
 def fetch_policy(
     source: Source[Policy],
     access: DataRead[source],
@@ -121,16 +121,20 @@ operation proceeds.
 ## Policy rejection and execution failure
 
 A material policy can reject support while its evaluator completes normally.
-The result remains a `Supported[P]` value with rejected status. An operational
+The result remains a `Assessment[P]` value with rejected disposition. An operational
 failure in the evaluator appears as `Err(error)`.
 
 This distinction gives a caller two separate outcomes.
 
 | Outcome | Representation |
 | --- | --- |
-| The policy reached a negative decision | Rejected `Supported[P]` |
+| The policy reached a negative decision | Rejected `Assessment[P]` |
 | The policy could not complete | `Err(Failure)` |
 
 [Assurance and inference](./assurance-types.md) describes the status carried by
 material support. [Execution and tracing](./execution-tracing.md) describes
 handler selection and persisted effect records.
+
+An inconclusive assessment is also a completed decision. Only successful
+`accept_support` introduces `Supported[P]`; rejected or inconclusive decisions
+produce `SupportError` at that acceptance boundary.

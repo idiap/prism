@@ -50,58 +50,11 @@ def whnf(
     current = term
     while True:
         budget.spend()
-        if isinstance(current, Local):
-            local = context.lookup(current.index)
-            if local.value is None:
-                return current
-            current = local.value
-            continue
-        if isinstance(current, Let):
-            current = substitute(current.body, current.value)
-            continue
-        if isinstance(current, Const):
-            declaration = environment.get(current.name)
-            if (
-                declaration.value is not None
-                and declaration.transparent
-                and declaration.name not in unfolding
-            ):
-                unfolding.add(declaration.name)
-                current = instantiate_universes(
-                    declaration.value,
-                    declaration.universe_parameters,
-                    current.universe_arguments,
-                )
-                continue
-            return current
-        if (
-            isinstance(current, InductiveRef | ConstructorRef | RecursorRef)
-            and current.arguments
-        ):
-            base: Term
-            if isinstance(current, InductiveRef):
-                base = InductiveRef(current.name)
-            elif isinstance(current, ConstructorRef):
-                base = ConstructorRef(current.name)
-            else:
-                base = RecursorRef(current.name)
-            current = apps(base, *current.arguments)
-            continue
-        if not isinstance(current, App):
-            return current
-        head, arguments = unfold_apps(current)
-        reduced_head = whnf(environment, context, head, budget=budget)
-        if isinstance(reduced_head, Lam) and arguments:
-            current = apps(substitute(reduced_head.body, arguments[0]), *arguments[1:])
-            continue
-        recursor_reduction = _reduce_recursor(
-            environment, context, reduced_head, arguments, budget
+        current, reduced = _reduce_head(
+            environment, context, current, budget, unfolding
         )
-        if recursor_reduction is not None:
-            current = recursor_reduction
-            continue
-        rebuilt = apps(reduced_head, *arguments)
-        return rebuilt
+        if not reduced:
+            return current
 
 
 def _reduce_recursor(
@@ -150,3 +103,70 @@ def _reduce_recursor(
         branch_arguments.append(apps(RecursorRef(head.name), *prefix, fields[position]))
     result = apps(branch, *branch_arguments)
     return apps(result, *arguments[spec.scrutinee_index + 1 :])
+
+
+def _unfold_constant(
+    environment: Environment, current: Const, unfolding: set[str]
+) -> Term | None:
+    declaration = environment.get(current.name)
+    if (
+        declaration.value is not None
+        and declaration.transparent
+        and declaration.name not in unfolding
+    ):
+        unfolding.add(declaration.name)
+        return instantiate_universes(
+            declaration.value,
+            declaration.universe_parameters,
+            current.universe_arguments,
+        )
+    return None
+
+
+def _reduce_head(
+    environment: Environment,
+    context: Context,
+    current: Term,
+    budget: ReductionBudget,
+    unfolding: set[str],
+) -> tuple[Term, bool]:
+    if isinstance(current, Local):
+        local = context.lookup(current.index)
+        if local.value is None:
+            return current, False
+        current = local.value
+        return current, True
+    if isinstance(current, Let):
+        current = substitute(current.body, current.value)
+        return current, True
+    if isinstance(current, Const):
+        unfolded = _unfold_constant(environment, current, unfolding)
+        if unfolded is None:
+            return current, False
+        current = unfolded
+        return current, True
+    if (
+        isinstance(current, InductiveRef | ConstructorRef | RecursorRef)
+        and current.arguments
+    ):
+        current = apps(type(current)(current.name), *current.arguments)
+        return current, True
+    if not isinstance(current, App):
+        return current, False
+    return _reduce_application(environment, context, current, budget)
+
+
+def _reduce_application(
+    environment: Environment, context: Context, current: App, budget: ReductionBudget
+) -> tuple[Term, bool]:
+    head, arguments = unfold_apps(current)
+    reduced_head = whnf(environment, context, head, budget=budget)
+    if isinstance(reduced_head, Lam) and arguments:
+        return apps(substitute(reduced_head.body, arguments[0]), *arguments[1:]), True
+    recursor_reduction = _reduce_recursor(
+        environment, context, reduced_head, arguments, budget
+    )
+    if recursor_reduction is not None:
+        return recursor_reduction, True
+    rebuilt = apps(reduced_head, *arguments)
+    return rebuilt, False

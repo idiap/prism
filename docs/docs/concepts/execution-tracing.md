@@ -15,7 +15,7 @@ and `execute` run that value through the Prism runtime.
 
 ## Construct a workflow
 
-```prism
+```prism title="Explanatory fragment"
 flow: Workflow[Message, Never] = publishing("ready")
 ```
 
@@ -34,22 +34,23 @@ value.
 
 An infallible workflow resolves directly to its successful value.
 
-```prism
+```prism title="Explanatory fragment"
 def main() -> Message:
     return solve publishing("ready")
 ```
 
 A fallible workflow resolves to `Result`.
 
-```prism
+```prism title="Explanatory fragment"
 def main() -> Result[Report, ReportError]:
     return solve build_report(request)
 ```
 
 Reasoning resolution checks that the workflow materializes the instantiated
-reasoning declaration and returns its required type.
+reasoning declaration, generic specialization, and actual arguments, and returns
+its required type.
 
-```prism
+```prism title="Explanatory fragment"
 def main() -> Status:
     flow = configured_review(source)
     return solve Review(source) using flow
@@ -69,8 +70,21 @@ these values.
 - Material policy decision
 - Proof elaboration and kernel decision
 
-Provenance and assurance occupy separate trace fields. Trace collection leaves
-both types unchanged.
+Trace version `11` carries shared declared contracts and observed outcomes.
+`execution` (completed/failed), `contract` (satisfied/rejected), and claim
+disposition (accepted/rejected/inconclusive/not_applicable) are independent.
+Unchecked assurance and unconstrained origins are explicit defaults.
+
+Each observed value has a path, actual producer, provenance reference, assurance,
+structured claim, certificate reference, and assumptions. Certificate details
+include policy/evidence references, validator hashes, or native proof/proposition/
+environment hashes. The provenance graph links production activities to their
+actual inputs; it retains generated ancestry through computation and marks fake
+generation synthetic. No consumer needs to infer assurance from type strings.
+
+Source occurrence identities are stable within a declaration. Each invocation,
+loop iteration, and relation target has a distinct runtime instance identity.
+Trace collection does not promote origin or assurance.
 
 The [Reasoning Log](../editors/vscode-run-explorer.md#reasoning-log) presents
 the occurrence sequence in VS Code. The full run record retains additional
@@ -101,7 +115,9 @@ Replay artifacts use content addressed storage next to the result file.
 uv run prism run main.prism --handler fake --output result.json
 ```
 
-Offline verification checks the stored module, records, and artifact hashes.
+Unsupported persisted trace versions are rejected visibly by CLI verification
+and editor run history; rerun the source to regenerate them. Offline verification
+checks the stored module, records, and artifact hashes.
 
 ```bash
 uv run prism verify-run result.json --mode offline

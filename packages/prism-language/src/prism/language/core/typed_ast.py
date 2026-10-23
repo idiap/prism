@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from prism.language.core.occurrences import OccurrenceContract, ReasoningClassification
 from prism.language.kernel import CheckedModule, Term
 
 from .bindings import Binding
 from .declarations import CallableContract, RecordContract
+from .indices import ValueIndex
 from .types import CoreType
 
 
@@ -47,3 +49,10 @@ class TypedModule:
     callable_origins: Mapping[str, str | None] = field(default_factory=dict)
     checked_module: CheckedModule | None = None
     expression_terms: Mapping[int, Term] = field(default_factory=dict)
+    expression_proof_bindings: Mapping[int, tuple[ValueIndex, ...]] = field(
+        default_factory=dict
+    )
+    occurrence_contracts: Mapping[int, OccurrenceContract] = field(default_factory=dict)
+    method_classifications: Mapping[str, ReasoningClassification] = field(
+        default_factory=dict
+    )

@@ -8,11 +8,11 @@
 from __future__ import annotations
 
 from prism.language.developer.diagnostics import (
-    Diagnostic,
-    PrismSyntaxError,
     SourceSpan,
 )
 
+from .scanning import _scan_line as _scan_line
+from .scanning import _syntax as _syntax
 from .tokens import Token, TokenKind
 
 
@@ -47,41 +47,7 @@ def tokenize(source: str, *, path: str | None = None) -> tuple[Token, ...]:
             continue
         indent = len(prefix)
         if not continuation:
-            if indent % 4:
-                raise _syntax(
-                    "indentation must use canonical four-space levels",
-                    number,
-                    1,
-                    "layout-indent-width",
-                    path,
-                )
-            if indent > indents[-1]:
-                if not _opens_suite(tokens):
-                    raise _syntax(
-                        "unexpected indentation; the preceding logical line does not open a suite",
-                        number,
-                        1,
-                        "layout-unexpected-indent",
-                        path,
-                    )
-                indents.append(indent)
-                tokens.append(
-                    Token(TokenKind.INDENT, "", SourceSpan(number, 1), indent)
-                )
-            elif indent < indents[-1]:
-                if indent not in indents:
-                    raise _syntax(
-                        f"dedent to unopened indentation level {indent}",
-                        number,
-                        1,
-                        "layout-inconsistent-dedent",
-                        path,
-                    )
-                while indent < indents[-1]:
-                    indents.pop()
-                    tokens.append(
-                        Token(TokenKind.DEDENT, "", SourceSpan(number, 1), indent)
-                    )
+            _update_indentation(indent, indents, tokens, number, path)
             buffer_line = number
             buffer_indent = indent
         text, quote, triple, escaped = _scan_line(
@@ -94,18 +60,7 @@ def tokenize(source: str, *, path: str | None = None) -> tuple[Token, ...]:
             escaped,
             path,
         )
-        trimmed_start = len(text) - len(text.lstrip())
-        trimmed_end = len(text.rstrip())
-        part = text[trimmed_start:trimmed_end]
-        if part:
-            if buffer:
-                buffer.append(" ")
-                buffer_positions.append((number, len(prefix) + trimmed_start + 1))
-            buffer.append(part)
-            buffer_positions.extend(
-                (number, len(prefix) + index + 1)
-                for index in range(trimmed_start, trimmed_end)
-            )
+        _append_logical_text(text, buffer, buffer_positions, number, prefix)
         if quote is None and not delimiters:
             logical = "".join(buffer)
             if logical.startswith(("workflow ", "agent ")) and not logical.endswith(
@@ -126,6 +81,69 @@ def tokenize(source: str, *, path: str | None = None) -> tuple[Token, ...]:
                 )
             buffer.clear()
             buffer_positions.clear()
+    _validate_end_of_source(quote, delimiters, buffer, buffer_line, buffer_indent, path)
+    _finish_layout(tokens, indents, len(lines))
+    return tuple(tokens)
+
+
+def _opens_suite(tokens: list[Token]) -> bool:
+    return bool(
+        tokens and tokens[-1].kind == TokenKind.LINE and tokens[-1].value.endswith(":")
+    )
+
+
+def _update_indentation(indent, indents, tokens, number, path) -> None:
+    if indent % 4:
+        raise _syntax(
+            "indentation must use canonical four-space levels",
+            number,
+            1,
+            "layout-indent-width",
+            path,
+        )
+    if indent > indents[-1]:
+        if not _opens_suite(tokens):
+            raise _syntax(
+                "unexpected indentation; the preceding logical line does not open a suite",
+                number,
+                1,
+                "layout-unexpected-indent",
+                path,
+            )
+        indents.append(indent)
+        tokens.append(Token(TokenKind.INDENT, "", SourceSpan(number, 1), indent))
+    elif indent < indents[-1]:
+        if indent not in indents:
+            raise _syntax(
+                f"dedent to unopened indentation level {indent}",
+                number,
+                1,
+                "layout-inconsistent-dedent",
+                path,
+            )
+        while indent < indents[-1]:
+            indents.pop()
+            tokens.append(Token(TokenKind.DEDENT, "", SourceSpan(number, 1), indent))
+
+
+def _append_logical_text(text, buffer, buffer_positions, number, prefix) -> None:
+    trimmed_start = len(text) - len(text.lstrip())
+    trimmed_end = len(text.rstrip())
+    part = text[trimmed_start:trimmed_end]
+    if part:
+        if buffer:
+            buffer.append(" ")
+            buffer_positions.append((number, len(prefix) + trimmed_start + 1))
+        buffer.append(part)
+        buffer_positions.extend(
+            (number, len(prefix) + index + 1)
+            for index in range(trimmed_start, trimmed_end)
+        )
+
+
+def _validate_end_of_source(
+    quote, delimiters, buffer, buffer_line, buffer_indent, path
+) -> None:
     if quote is not None:
         raise _syntax(
             "unterminated string literal", buffer_line, 1, "syntax-string", path
@@ -147,88 +165,12 @@ def tokenize(source: str, *, path: str | None = None) -> tuple[Token, ...]:
             "syntax-workflow",
             path,
         )
+
+
+def _finish_layout(tokens: list[Token], indents: list[int], line_count: int) -> None:
     while len(indents) > 1:
         indents.pop()
         tokens.append(
-            Token(TokenKind.DEDENT, "", SourceSpan(len(lines) + 1, 1), indents[-1])
+            Token(TokenKind.DEDENT, "", SourceSpan(line_count + 1, 1), indents[-1])
         )
-    tokens.append(Token(TokenKind.EOF, "", SourceSpan(len(lines) + 1, 1)))
-    return tuple(tokens)
-
-
-def _opens_suite(tokens: list[Token]) -> bool:
-    return bool(
-        tokens and tokens[-1].kind == TokenKind.LINE and tokens[-1].value.endswith(":")
-    )
-
-
-def _scan_line(
-    text: str,
-    delimiters: list[tuple[str, int, int]],
-    line: int,
-    start_column: int,
-    quote: str | None,
-    triple: bool,
-    escaped: bool,
-    path: str | None,
-) -> tuple[str, str | None, bool, bool]:
-    pairs = {")": "(", "]": "[", "}": "{"}
-    result: list[str] = []
-    index = 0
-    while index < len(text):
-        char = text[index]
-        lookahead = text[index : index + 3]
-        if quote is not None:
-            result.append(char)
-            if triple and lookahead == quote * 3:
-                result.extend(text[index + 1 : index + 3])
-                index += 3
-                quote = None
-                triple = False
-                escaped = False
-                continue
-            if not triple:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == quote:
-                    quote = None
-            index += 1
-            continue
-        if lookahead in {'"""', "'''"}:
-            quote = lookahead[0]
-            triple = True
-            result.append(lookahead)
-            index += 3
-            continue
-        if char in {'"', "'"}:
-            quote = char
-            triple = False
-            result.append(char)
-        elif char == "#":
-            break
-        elif char in "([{":
-            delimiters.append((char, line, start_column + index))
-            result.append(char)
-        elif char in ")]}":
-            if not delimiters or delimiters[-1][0] != pairs[char]:
-                raise _syntax(
-                    f"unmatched closing delimiter `{char}`",
-                    line,
-                    start_column + index,
-                    "syntax-unmatched-delimiter",
-                    path,
-                )
-            delimiters.pop()
-            result.append(char)
-        else:
-            result.append(char)
-        index += 1
-    return "".join(result), quote, triple, escaped
-
-
-def _syntax(
-    message: str, line: int, column: int, code: str, path: str | None
-) -> PrismSyntaxError:
-    return PrismSyntaxError(Diagnostic(message, SourceSpan(line, column), code), path)
+    tokens.append(Token(TokenKind.EOF, "", SourceSpan(line_count + 1, 1)))

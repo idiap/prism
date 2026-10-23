@@ -28,16 +28,14 @@ from ..core_elaboration import (
 )
 from ..diagnostics import Diagnostic, PrismTypeError, SourceSpan
 from ..syntax.ast import (
-    FunctionDecl,
-    TheoremDecl,
     TypeExpr,
-    WorkflowDecl,
 )
-from .base import _CheckerPhase
-from .helpers import _dependent_assurance_binding
+from ..type_syntax import parse_type
+from .helpers import _dependent_assurance_binding, _expand_aliases
+from .propositions import _PropositionCheckingMixin
 
 
-class _TypeCheckingMixin(_CheckerPhase):
+class _TypeCheckingMixin(_PropositionCheckingMixin):
     def _elaborate_kernel_type(
         self,
         syntax: TypeExpr,
@@ -58,7 +56,9 @@ class _TypeCheckingMixin(_CheckerPhase):
             if name in seen:
                 raise ValueError(f"recursive kernel type alias `{name}`")
             return self._elaborate_kernel_type(alias, locals_, seen | {name})
-        return elaborate_type_text(name, self.kernel_environment, locals_)
+        return elaborate_type_text(
+            name, self.kernel_environment, locals_, self.native_names
+        )
 
     def _protected_type(
         self,
@@ -69,18 +69,9 @@ class _TypeCheckingMixin(_CheckerPhase):
 
         if type_.name in PROTECTED_TYPES:
             return type_.name
-        for argument in type_.arguments:
-            protected = self._protected_type(argument, seen)
-            if protected is not None:
-                return protected
-        for _, parameter in type_.parameters:
-            protected = self._protected_type(parameter, seen)
-            if protected is not None:
-                return protected
-        if type_.result is not None:
-            protected = self._protected_type(type_.result, seen)
-            if protected is not None:
-                return protected
+        protected = self._protected_structural_type(type_, seen)
+        if protected is not None:
+            return protected
         if type_.name in seen:
             return None
         next_seen = seen | {type_.name}
@@ -109,7 +100,7 @@ class _TypeCheckingMixin(_CheckerPhase):
             self._validate_type(value_type, span, local_names)
             self._validate_type(proposition, span, local_names | {binder})
             return
-        if type_.name == "Validated":
+        if type_.name in {"Validated", "Validator"}:
             self.fail(
                 "Validated requires an exact value binder and specification, for "
                 "example `Validated[value: A, Accepted(value)]`",
@@ -124,17 +115,7 @@ class _TypeCheckingMixin(_CheckerPhase):
                 "type-any-forbidden",
             )
         if type_.is_function:
-            unknown_effects = set(type_.effects) - SUPPORTED_EFFECTS
-            if unknown_effects:
-                self.fail(
-                    f"unknown effects: {', '.join(sorted(unknown_effects))}",
-                    span,
-                    "type-unknown-effect",
-                )
-            for _, item in type_.parameters:
-                self._validate_type(item, span, local_names)
-            if type_.result:
-                self._validate_type(type_.result, span, local_names)
+            self._validate_function_type(type_, span, local_names)
             return
         declared_parameters = self.type_parameters.get(type_.name)
         if declared_parameters is not None and len(type_.arguments) != len(
@@ -147,41 +128,7 @@ class _TypeCheckingMixin(_CheckerPhase):
                 "type-arity",
             )
         if type_.name not in self.visible_types and type_.name not in local_names:
-            callable_contract = self.callables.get(type_.name)
-            if callable_contract is not None and (
-                callable_contract.kind in {"reasoning", "relation"}
-                or (
-                    callable_contract.kind == "def"
-                    and callable_contract.result is not None
-                    and callable_contract.result.name == "Prop"
-                    and not callable_contract.effects
-                )
-            ):
-                pass
-            elif type_.name.startswith("forall "):
-                pass
-            elif "(" in type_.name and type_.name.endswith(")"):
-                base = type_.name.split("(", 1)[0]
-                declared_callables = {
-                    item.name
-                    for item in self.program.declarations
-                    if isinstance(
-                        item,
-                        FunctionDecl | WorkflowDecl | TheoremDecl,
-                    )
-                }
-                if (
-                    base not in self.callables
-                    and base not in declared_callables
-                    and base not in local_names
-                ):
-                    self.fail(
-                        f"unknown proposition `{base}`",
-                        span,
-                        "type-unknown-proposition",
-                    )
-            else:
-                self.fail(f"unknown type `{type_.name}`", span, "type-unknown-type")
+            self._validate_nominal_type(type_, span, local_names)
         for item in type_.arguments:
             self._validate_type(item, span, local_names)
 
@@ -220,7 +167,10 @@ class _TypeCheckingMixin(_CheckerPhase):
         self, parameters, effects, owner, scope=None, local_names=None
     ):
         capability_names = {
-            self._type(item.type, local_names or set()).name for item in parameters
+            _expand_aliases(
+                parse_type(item.type.text), self.aliases, self.type_parameters
+            ).name
+            for item in parameters
         }
         if scope is not None:
             capability_names.update(
@@ -248,17 +198,85 @@ class _TypeCheckingMixin(_CheckerPhase):
                     "type-missing-permission",
                 )
 
-    def _bind(self, name, type_, value, span):
+    def _bind(self, name, type_, value, span, identity=None):
         try:
-            self.scope.bind(CoreBinding(name, type_, value))
+            self.scope.bind(
+                CoreBinding(
+                    name,
+                    type_,
+                    value,
+                    identity or self._binding_identity(name, value, self.scope),
+                )
+            )
         except BindingError as exc:
             self.fail(str(exc), span, "type-duplicate-binding")
 
     def _bind_local(self, scope, name, type_, span, value=None):
         try:
-            scope.bind(CoreBinding(name, type_, value))
+            scope.bind(
+                CoreBinding(
+                    name,
+                    type_,
+                    value,
+                    self._binding_identity(
+                        name, value, scope, None if scope is self.scope else span
+                    ),
+                )
+            )
         except BindingError as exc:
             self.fail(str(exc), span, "type-duplicate-binding")
 
     def fail(self, message: str, span: SourceSpan, code: str) -> NoReturn:
         raise PrismTypeError(Diagnostic(message, span, code), self.program.path)
+
+    def _protected_structural_type(
+        self, type_: CoreType, seen: frozenset[str]
+    ) -> str | None:
+        for argument in type_.arguments:
+            protected = self._protected_type(argument, seen)
+            if protected is not None:
+                return protected
+        for _, parameter in type_.parameters:
+            protected = self._protected_type(parameter, seen)
+            if protected is not None:
+                return protected
+        if type_.result is not None:
+            protected = self._protected_type(type_.result, seen)
+            if protected is not None:
+                return protected
+        return None
+
+    def _validate_function_type(
+        self, type_: CoreType, span: SourceSpan, local_names: set[str]
+    ) -> None:
+        unknown_effects = set(type_.effects) - SUPPORTED_EFFECTS
+        if unknown_effects:
+            self.fail(
+                f"unknown effects: {', '.join(sorted(unknown_effects))}",
+                span,
+                "type-unknown-effect",
+            )
+        for _, item in type_.parameters:
+            self._validate_type(item, span, local_names)
+        if type_.result:
+            self._validate_type(type_.result, span, local_names)
+        return
+
+    def _validate_nominal_type(
+        self, type_: CoreType, span: SourceSpan, local_names: set[str]
+    ) -> None:
+        if type_.proposition is not None:
+            return  # The structural resolver checks its callable and arguments.
+        callable_contract = self.callables.get(type_.name)
+        if callable_contract is not None and (
+            callable_contract.kind in {"reasoning", "relation"}
+            or (
+                callable_contract.kind == "def"
+                and callable_contract.result is not None
+                and callable_contract.result.name == "Prop"
+                and not callable_contract.effects
+            )
+        ):
+            pass
+        else:
+            self.fail(f"unknown type `{type_.name}`", span, "type-unknown-type")

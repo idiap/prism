@@ -9,4 +9,7 @@ type EvidentialInput[Observations, Criteria]:
 
 type Evidential[Conclusion, Observations, Criteria] = (
     source: EvidentialInput[Observations, Criteria],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = evaluation_and_judgment
+    reasoning_archetypes = [evidential_assessment]

@@ -18,18 +18,18 @@ from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
-from prism.language.core import Err, GeneratedValue, Ok, RecordValue
+from prism.language.core import Err, GeneratedValue, Ok
 from prism.language.effects import EffectRequest, EffectResult
 
+from .hooks import CodexConfigurationError as CodexConfigurationError
+from .hooks import _codex_hooks as _codex_hooks
+from .hooks import _merge_hooks as _merge_hooks
+from .schema import CodexResponseError as CodexResponseError
+from .schema import _decode_value as _decode_value
+from .schema import _json_value as _json_value
+from .schema import _without_prism_extensions as _without_prism_extensions
+
 CodexRunner = Callable[..., subprocess.CompletedProcess[str]]
-
-
-class CodexConfigurationError(RuntimeError):
-    pass
-
-
-class CodexResponseError(RuntimeError):
-    pass
 
 
 class CodexEffectHandler:
@@ -93,38 +93,13 @@ class CodexEffectHandler:
         except CodexConfigurationError as exc:
             return self._failure(request, str(exc))
         public_schema = _without_prism_extensions(schema)
-        command: list[str] = [
-            self.executable,
-            "exec",
-            "--ephemeral",
-            "--sandbox",
-            "read-only",
-            "--skip-git-repo-check",
-            "--color",
-            "never",
-        ]
-        if self.model:
-            command.extend(("--model", self.model))
-        if self.profile:
-            command.extend(("--profile", self.profile))
-
+        command = self._command()
         try:
             with tempfile.TemporaryDirectory(prefix="prism-codex-") as directory:
                 working_directory = Path(directory)
-                schema_path = working_directory / "output-schema.json"
-                schema_path.write_text(
-                    json.dumps(public_schema, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8",
+                schema_path = self._prepare_request_files(
+                    working_directory, public_schema, native_hooks, command
                 )
-                if native_hooks:
-                    hook_directory = working_directory / ".codex"
-                    hook_directory.mkdir()
-                    (hook_directory / "hooks.json").write_text(
-                        json.dumps(_merge_hooks(native_hooks), indent=2, sort_keys=True)
-                        + "\n",
-                        encoding="utf-8",
-                    )
-                    command.append("--dangerously-bypass-hook-trust")
                 completed = self._runner(
                     [*command, "--output-schema", str(schema_path), "-"],
                     input=prompt,
@@ -150,13 +125,9 @@ class CodexEffectHandler:
         except OSError as exc:
             return self._failure(request, f"could not start codex exec: {exc}")
 
-        if completed.returncode != 0:
-            detail = _process_detail(completed)
-            message = f"codex exec failed with exit code {completed.returncode}"
-            if detail:
-                message += f": {detail}"
-            return self._failure(request, message)
-
+        failure = self._process_failure(request, completed)
+        if failure is not None:
+            return failure
         try:
             payload = _response_payload(completed.stdout)
             generated = _decode_value(payload, schema)
@@ -186,6 +157,50 @@ class CodexEffectHandler:
             executor="codex",
         )
 
+    def _command(self) -> list[str]:
+        command: list[str] = [
+            self.executable,
+            "exec",
+            "--ephemeral",
+            "--sandbox",
+            "read-only",
+            "--skip-git-repo-check",
+            "--color",
+            "never",
+        ]
+        if self.model:
+            command.extend(("--model", self.model))
+        if self.profile:
+            command.extend(("--profile", self.profile))
+        return command
+
+    def _prepare_request_files(
+        self, working_directory, public_schema, native_hooks, command
+    ) -> Path:
+        schema_path = working_directory / "output-schema.json"
+        schema_path.write_text(
+            json.dumps(public_schema, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if native_hooks:
+            hook_directory = working_directory / ".codex"
+            hook_directory.mkdir()
+            (hook_directory / "hooks.json").write_text(
+                json.dumps(_merge_hooks(native_hooks), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            command.append("--dangerously-bypass-hook-trust")
+        return schema_path
+
+    def _process_failure(self, request, completed) -> EffectResult | None:
+        if completed.returncode != 0:
+            detail = _process_detail(completed)
+            message = f"codex exec failed with exit code {completed.returncode}"
+            if detail:
+                message += f": {detail}"
+            return self._failure(request, message)
+        return None
+
 
 def _generation_prompt(value: Any) -> str:
     instructions = (
@@ -202,75 +217,6 @@ def _generation_prompt(value: Any) -> str:
     )
 
 
-def _codex_hooks(value: Any) -> tuple[dict[str, Any], ...]:
-    if value in (None, (), []):
-        return ()
-    if not isinstance(value, tuple | list):
-        raise CodexConfigurationError("agent hooks must be typed native hook artifacts")
-    result: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, tuple | list) or len(item) != 2:
-            raise CodexConfigurationError("invalid native hook artifact")
-        provider, configuration = item
-        if provider != "Codex":
-            raise CodexConfigurationError(
-                f"Codex execution cannot activate Hooks[{provider}]"
-            )
-        try:
-            parsed = json.loads(configuration)
-        except (TypeError, json.JSONDecodeError) as exc:
-            raise CodexConfigurationError(
-                "invalid built Codex hook configuration"
-            ) from exc
-        if not isinstance(parsed, dict) or not isinstance(parsed.get("hooks"), dict):
-            raise CodexConfigurationError("invalid built Codex hook configuration")
-        result.append(parsed)
-    return tuple(result)
-
-
-def _merge_hooks(configurations: tuple[dict[str, Any], ...]) -> dict[str, Any]:
-    merged: dict[str, Any] = {"hooks": {}}
-    for configuration in configurations:
-        for event, groups in configuration["hooks"].items():
-            merged["hooks"].setdefault(event, []).extend(groups)
-    return merged
-
-
-def _json_value(value: Any) -> Any:
-    if isinstance(value, RecordValue):
-        return {
-            name: _json_value(field_value) for name, field_value in value.fields.items()
-        }
-    if isinstance(value, Mapping):
-        return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_json_value(item) for item in value]
-    return value
-
-
-def _without_prism_extensions(schema: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: (
-            _without_prism_extensions(value)
-            if isinstance(value, Mapping)
-            else (
-                [
-                    (
-                        _without_prism_extensions(item)
-                        if isinstance(item, Mapping)
-                        else item
-                    )
-                    for item in value
-                ]
-                if isinstance(value, list)
-                else value
-            )
-        )
-        for key, value in schema.items()
-        if not key.startswith("x-prism-")
-    }
-
-
 def _response_payload(stdout: str) -> Any:
     if not stdout.strip():
         raise CodexResponseError("Codex returned no structured content")
@@ -278,57 +224,6 @@ def _response_payload(stdout: str) -> Any:
         return json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise CodexResponseError("Codex returned invalid JSON") from exc
-
-
-def _decode_value(value: Any, schema: Mapping[str, Any]) -> Any:
-    if "anyOf" in schema:
-        if value is None:
-            return None
-        options = [item for item in schema["anyOf"] if item.get("type") != "null"]
-        if not options:
-            raise CodexResponseError("output schema has no non-null option")
-        return _decode_value(value, options[0])
-    schema_type = schema.get("type")
-    if schema_type is not None and not isinstance(schema_type, str):
-        raise CodexResponseError("output schema type must be a string")
-    if schema_type == "object":
-        if not isinstance(value, Mapping):
-            raise CodexResponseError("model output must be a JSON object")
-        properties = schema.get("properties", {})
-        required = schema.get("required", ())
-        missing = [name for name in required if name not in value]
-        unknown = [name for name in value if name not in properties]
-        if missing:
-            raise CodexResponseError(
-                "model output is missing fields: " + ", ".join(missing)
-            )
-        if unknown and schema.get("additionalProperties") is False:
-            raise CodexResponseError(
-                "model output has unknown fields: " + ", ".join(unknown)
-            )
-        fields = {
-            name: _decode_value(value[name], field_schema)
-            for name, field_schema in properties.items()
-            if name in value
-        }
-        record_name = schema.get("x-prism-record")
-        return RecordValue(str(record_name), fields) if record_name else fields
-    if schema_type == "array":
-        if not isinstance(value, list):
-            raise CodexResponseError("model output must be a JSON array")
-        return [_decode_value(item, schema["items"]) for item in value]
-    expected_python = {
-        "boolean": bool,
-        "integer": int,
-        "number": (int, float),
-        "string": str,
-    }.get(schema_type or "")
-    if expected_python is not None:
-        if schema_type in {"integer", "number"} and isinstance(value, bool):
-            raise CodexResponseError(f"model output must be {schema_type}")
-        if not isinstance(value, expected_python):
-            raise CodexResponseError(f"model output must be {schema_type}")
-    return value
 
 
 def _process_detail(completed: subprocess.CompletedProcess[str]) -> str:

@@ -366,3 +366,20 @@ def test_module_deserialization_rejects_wrong_hash_and_non_core_terms() -> None:
             b'"imports":[],"declarations":[{"name":"x","kind":"axiom",'
             b'"type":["metavariable",0],"value":null}],"hash":"bad"}'
         )
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        (["unknown"], "unknown or malformed core term tag `unknown`"),
+        (["local", "bad"], "unknown or malformed core term tag `local`"),
+        (["const", "name", None], "malformed core term"),
+    ],
+)
+def test_term_decoding_preserves_malformed_tag_diagnostics(data, message) -> None:
+    from prism.language.kernel.serialization import term_from_data
+
+    with pytest.raises(KernelError) as failure:
+        term_from_data(data)
+    assert str(failure.value) == message
+    assert failure.value.diagnostic.code == "kernel-serialization-term"

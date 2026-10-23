@@ -9,4 +9,7 @@ type ContrastInput[Baseline, Alternative]:
 
 type Contrastive[Conclusion, Baseline, Alternative] = (
     source: ContrastInput[Baseline, Alternative],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [contrastive]

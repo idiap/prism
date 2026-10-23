@@ -9,4 +9,7 @@ type InductionInput[Dataset, Population]:
 
 type Inductive[Conclusion, Dataset, Population] = (
     source: InductionInput[Dataset, Population],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [inductive]

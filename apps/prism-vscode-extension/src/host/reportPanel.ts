@@ -3,13 +3,13 @@
 //
 // SPDX-License-Identifier: MIT
 
+import { renderReasoningLog } from './reasoningLog'
 import * as vscode from 'vscode'
 
 import {
   PrismIdeDiagnostic,
   PrismIdeRunResult,
   PrismInferenceOutput,
-  PrismTraceEventOutput,
 } from '../infoview-api/protocol'
 import { PrismLogger } from './logger'
 import { PrismWorkbenchViewState } from './state'
@@ -699,61 +699,8 @@ export class PrismReportPanelProvider implements vscode.WebviewViewProvider, vsc
   }
 
   private renderOutput(output: PrismInferenceOutput): string {
-    return `${this.renderReasoningLog(output.trace)}
+    return `${renderReasoningLog(output, value => this.renderValue(value))}
 ${this.renderOutputDiagnostics(output.diagnostics)}`
-  }
-
-  private renderReasoningLog(events: PrismTraceEventOutput[]): string {
-    const steps = events.filter(event => (
-      event.kind === 'workflow-node'
-      && this.stringField(event.metadata, 'method_type') !== undefined
-    ))
-    if (!steps.length) {
-      return ''
-    }
-    const reasoning = this.stringField(steps[0].metadata, 'reasoning')
-      || events.find(event => event.kind === 'reasoning-started')?.name
-    const reasoningLabel = reasoning?.split('.').pop()
-    return `<section class="section" aria-label="Reasoning log">
-  <div class="summary-line">
-    <h2>Reasoning Log</h2>
-    ${reasoningLabel ? `<span class="muted">${this.escapeHtml(reasoningLabel)}</span>` : ''}
-    <span class="muted">${steps.length} steps</span>
-  </div>
-  <div class="node-stack">
-    ${steps.map((step, index) => this.renderReasoningStep(
-      step,
-      index,
-      index === steps.length - 1,
-    )).join('')}
-  </div>
-</section>`
-  }
-
-  private renderReasoningStep(
-    event: PrismTraceEventOutput,
-    index: number,
-    isFinalStep: boolean,
-  ): string {
-    const outputType = this.stringField(event.metadata, 'output_type')
-    const hasResult = Object.prototype.hasOwnProperty.call(event.metadata, 'result')
-    return `<details class="node reasoning-step">
-  <summary>
-    ${this.chevronIcons()}
-    <span class="summary-content summary-line">
-      <span class="ref">Step ${index + 1}</span>
-      <span>${this.escapeHtml(event.name)}</span>
-      ${this.statusBadge(isFinalStep || event.status !== 'accepted' ? event.status : undefined)}
-      ${outputType ? `<span class="summary-text">${this.escapeHtml(outputType)}</span>` : ''}
-    </span>
-  </summary>
-  <div class="node-body">
-    <span class="label">Result</span>
-    ${hasResult
-      ? this.renderValue(event.metadata.result)
-      : '<span class="muted">No result was recorded for this step.</span>'}
-  </div>
-</details>`
   }
 
   private renderRunDiagnostics(diagnostics: PrismIdeDiagnostic[]): string {

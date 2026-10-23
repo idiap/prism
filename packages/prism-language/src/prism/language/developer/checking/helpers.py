@@ -7,13 +7,14 @@
 
 from __future__ import annotations
 
-import re
+from dataclasses import replace
 from typing import Any, Mapping
 
 from prism.language.core import (
     CallableContract,
     CoreType,
 )
+from prism.language.core import substitute_type as _substitute
 
 from ..syntax.ast import (
     BinaryExpr,
@@ -30,7 +31,7 @@ from ..syntax.ast import (
     RepeatComposition,
     SequenceComposition,
 )
-from ..type_syntax import _find_top_level, parse_type
+from .dependencies import _binding_value_dependencies as _binding_value_dependencies
 
 
 def _expression_name(expression: Expression) -> str:
@@ -188,10 +189,6 @@ def _failure_union(failures: list[CoreType]) -> CoreType:
     return CoreType("FailureUnion", unique)
 
 
-def _proposition_type(expression: Expression) -> CoreType:
-    return CoreType(_render_expression(expression))
-
-
 def _render_expression(expression: Expression) -> str:
     if isinstance(expression, NameExpr):
         return expression.name
@@ -233,58 +230,18 @@ def _render_expression(expression: Expression) -> str:
     return type(expression).__name__
 
 
-def _proposition_arguments(proposition: str) -> tuple[str, ...]:
-    """Return canonical top-level arguments from a dependent proposition name."""
-
-    opening = proposition.find("(")
-    if opening < 1 or not proposition.endswith(")"):
-        return ()
-    payload = proposition[opening + 1 : -1]
-    arguments: list[str] = []
-    start = 0
-    depth = 0
-    quote: str | None = None
-    escaped = False
-    for index, character in enumerate(payload):
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif character == "\\":
-                escaped = True
-            elif character == quote:
-                quote = None
-            continue
-        if character in {'"', "'"}:
-            quote = character
-        elif character in "([{":
-            depth += 1
-        elif character in ")]}":
-            depth -= 1
-        elif character == "," and depth == 0:
-            arguments.append(payload[start:index].strip())
-            start = index + 1
-    arguments.append(payload[start:].strip())
-    return tuple(argument for argument in arguments if argument)
-
-
 def _dependent_assurance_binding(
     type_: CoreType,
 ) -> tuple[str, CoreType, CoreType] | None:
-    """Return the named value binder from a dependent assurance type."""
-
-    if type_.name not in {"Validated", "Verified"} or len(type_.arguments) != 2:
+    if (
+        type_.name not in {"Validated", "Verified", "Validator"}
+        or len(type_.arguments) != 2
+    ):
         return None
     binding, proposition = type_.arguments
-    if binding.arguments or binding.is_function:
+    if binding.binder is None:
         return None
-    colon = _find_top_level(binding.name, ":")
-    if colon < 1:
-        return None
-    name = binding.name[:colon].strip()
-    value_type_text = binding.name[colon + 1 :].strip()
-    if not name or not value_type_text:
-        return None
-    return name, parse_type(value_type_text), proposition
+    return binding.binder, binding.arguments[0], proposition
 
 
 def _dependent_proposition_matches(
@@ -292,70 +249,32 @@ def _dependent_proposition_matches(
     actual: CoreType,
     binder: str,
 ) -> bool:
-    """Match a proposition whose named value position is existentially bound."""
+    """Instantiate the existential binder consistently throughout its claim."""
+    if expected.proposition is None or actual.proposition is None:
+        return expected == actual
+    bindings = {}
 
-    expected_opening = expected.name.find("(")
-    actual_opening = actual.name.find("(")
-    if expected_opening < 1 or actual_opening < 1:
-        return False
-    if expected.name[:expected_opening] != actual.name[:actual_opening]:
-        return False
-    expected_arguments = _proposition_arguments(expected.name)
-    actual_arguments = _proposition_arguments(actual.name)
-    if len(expected_arguments) != len(actual_arguments):
-        return False
-    return any(argument == binder for argument in expected_arguments) and all(
-        expected_argument == binder or expected_argument == actual_argument
-        for expected_argument, actual_argument in zip(
-            expected_arguments,
-            actual_arguments,
-            strict=True,
+    def matches(left, right):
+        if left.kind == "reference" and left.symbol == binder:
+            previous = bindings.setdefault(binder, right)
+            return previous == right
+        return (
+            left.kind == right.kind
+            and left.symbol == right.symbol
+            and left.argument_names == right.argument_names
+            and left.type_arguments == right.type_arguments
+            and len(left.children) == len(right.children)
+            and all(
+                matches(a, b)
+                for a, b in zip(left.children, right.children, strict=True)
+            )
         )
-    )
+
+    return matches(expected.proposition, actual.proposition)
 
 
 def _is_proposition(type_: CoreType) -> bool:
-    return type_.name == "Prop" or type_.name.startswith("forall ") or "(" in type_.name
-
-
-def _substitute(type_: CoreType, substitutions: Mapping[str, CoreType]) -> CoreType:
-    dependent = _dependent_assurance_binding(type_)
-    if dependent is not None:
-        binder, value_type, proposition = dependent
-        substituted_value = _substitute(value_type, substitutions)
-        return CoreType(
-            type_.name,
-            (
-                CoreType(f"{binder}: {substituted_value.render()}"),
-                _substitute(proposition, substitutions),
-            ),
-        )
-    if type_.name in substitutions and not type_.arguments and not type_.is_function:
-        return substitutions[type_.name]
-    if "(" in type_.name and not type_.arguments and not type_.is_function:
-        proposition = type_.name
-        for name, replacement in substitutions.items():
-            if replacement.arguments or replacement.is_function:
-                continue
-            proposition = re.sub(
-                rf"\b{re.escape(name)}(?=\s*\()",
-                replacement.name,
-                proposition,
-            )
-        return CoreType(proposition)
-    if type_.is_function:
-        return CoreType(
-            type_.name,
-            parameters=tuple(
-                (name, _substitute(item, substitutions))
-                for name, item in type_.parameters
-            ),
-            result=_substitute(type_.result, substitutions) if type_.result else None,
-            effects=type_.effects,
-        )
-    return CoreType(
-        type_.name, tuple(_substitute(item, substitutions) for item in type_.arguments)
-    )
+    return type_.name == "Prop" or type_.proposition is not None
 
 
 def _expand_aliases(
@@ -364,26 +283,6 @@ def _expand_aliases(
     type_parameters: Mapping[str, tuple[str, ...]],
     seen: frozenset[str] = frozenset(),
 ) -> CoreType:
-    dependent = _dependent_assurance_binding(type_)
-    if dependent is not None:
-        binder, value_type, proposition = dependent
-        expanded_value = _expand_aliases(value_type, aliases, type_parameters, seen)
-        binding_text = type_.arguments[0].name
-        colon = _find_top_level(binding_text, ":")
-        value_text = binding_text[colon + 1 :]
-        spacing = value_text[: len(value_text) - len(value_text.lstrip())]
-        return CoreType(
-            type_.name,
-            (
-                CoreType(f"{binder}:{spacing}{expanded_value.render()}"),
-                _expand_aliases(proposition, aliases, type_parameters, seen),
-            ),
-        )
-    if "(" in type_.name and not type_.arguments and not type_.is_function:
-        base, arguments = type_.name.split("(", 1)
-        alias = aliases.get(base)
-        if alias is not None and not alias.arguments and not alias.is_function:
-            return CoreType(f"{alias.name}({arguments}")
     if type_.name in aliases and type_.name not in seen:
         parameters = type_parameters.get(type_.name, ())
         if len(parameters) == len(type_.arguments):
@@ -397,26 +296,19 @@ def _expand_aliases(
                 type_parameters,
                 seen | {type_.name},
             )
-    if type_.is_function:
-        return CoreType(
-            type_.name,
-            parameters=tuple(
-                (name, _expand_aliases(item, aliases, type_parameters, seen))
-                for name, item in type_.parameters
-            ),
-            result=(
-                _expand_aliases(type_.result, aliases, type_parameters, seen)
-                if type_.result is not None
-                else None
-            ),
-            effects=type_.effects,
-        )
-    return CoreType(
-        type_.name,
-        tuple(
+    return replace(
+        type_,
+        arguments=tuple(
             _expand_aliases(item, aliases, type_parameters, seen)
             for item in type_.arguments
         ),
+        parameters=tuple(
+            (name, _expand_aliases(item, aliases, type_parameters, seen))
+            for name, item in type_.parameters
+        ),
+        result=_expand_aliases(type_.result, aliases, type_parameters, seen)
+        if type_.result
+        else None,
     )
 
 
@@ -428,46 +320,33 @@ def _unique_types(types: list[CoreType]) -> tuple[CoreType, ...]:
     return tuple(result)
 
 
-def _binding_value_dependencies(
-    expression: Any,
-    candidates: set[str],
-    *,
-    namespace: str | None = None,
-) -> tuple[str, ...]:
-    """Return top-level values required to evaluate an imported binding."""
+def _substitute_indices(type_: CoreType, bindings) -> CoreType:
+    """Substitute resolved value bindings without touching similarly named symbols."""
+    return replace(
+        type_,
+        proposition=type_.proposition.substitute(bindings)
+        if type_.proposition
+        else None,
+        arguments=tuple(
+            _substitute_indices(item, bindings) for item in type_.arguments
+        ),
+        parameters=tuple(
+            (name, _substitute_indices(item, bindings))
+            for name, item in type_.parameters
+        ),
+        result=_substitute_indices(type_.result, bindings) if type_.result else None,
+    )
 
-    result: set[str] = set()
 
-    def walk(value: Any) -> None:
-        if isinstance(value, NodeOccurrence) and value.relation:
-            relation_name = value.relation
-            if relation_name in candidates:
-                result.add(relation_name)
-            elif namespace and "." not in relation_name:
-                qualified = f"{namespace}.{relation_name}"
-                if qualified in candidates:
-                    result.add(qualified)
-        if isinstance(value, NameExpr):
-            if value.name in candidates:
-                result.add(value.name)
-                return
-            qualified = (
-                f"{namespace}.{value.name}"
-                if namespace and "." not in value.name
-                else None
-            )
-            if qualified in candidates:
-                result.add(qualified)
-                return
-        if not hasattr(value, "__dataclass_fields__"):
-            return
-        for name in value.__dataclass_fields__:
-            item = getattr(value, name)
-            if isinstance(item, tuple):
-                for child in item:
-                    walk(getattr(child, "value", child))
-            elif hasattr(item, "__dataclass_fields__"):
-                walk(item)
+def _index_symbols(type_: CoreType) -> set[str]:
+    def symbols(index):
+        return ({index.symbol} if index.kind == "reference" else set()).union(
+            *(symbols(child) for child in index.children)
+        )
 
-    walk(expression)
-    return tuple(sorted(result))
+    result = symbols(type_.proposition) if type_.proposition else set()
+    for item in (*type_.arguments, *(value for _, value in type_.parameters)):
+        result.update(_index_symbols(item))
+    if type_.result:
+        result.update(_index_symbols(type_.result))
+    return result

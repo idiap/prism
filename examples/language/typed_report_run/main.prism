@@ -1,0 +1,31 @@
+import prism.reporting.report as r
+
+type SurveyRequest:
+    observation: String
+
+def describe(observation: String) -> String:
+    return "## Field observation\n\n" + observation
+
+def read_notebook(request: SurveyRequest) -> Evidence[String]:
+    return observe(request.observation, source="User-entered field notebook")
+
+def format_observation(observation: Evidence[String]) -> Computed[String]:
+    return compute(observation.value, procedure=describe)
+
+def assemble_report(narrative: Computed[String]) -> r.Report:
+    summary: r.Section = r.Markdown(id="observation", text=narrative.value)
+    method: r.Section = r.Markdown(id="method", text="## How this report was made\n\nPRISM records the notebook entry as an assertion and computes the formatted narrative. Open the observation's provenance to inspect that ancestry. Formatting does not prove the observation.")
+    summary_slot: r.TemplateSection = r.MarkdownSlot(id="observation")
+    method_slot: r.TemplateSection = r.MarkdownSlot(id="method")
+    template: r.TemplateChoice = r.WithTemplate(snapshot=r.Template(id="field-survey-v1", title="Field survey", sections=[summary_slot, method_slot]))
+    return r.Report(id="field-survey", title="Field survey report", sections=[summary, method], template=template)
+
+workflow field_survey(request: SurveyRequest) -> r.Report:
+    sequence:
+        [observation: read_notebook(request)]
+        [narrative: format_observation(observation)]
+        [report: assemble_report(narrative)]
+    return report
+
+def main(request: SurveyRequest) -> r.Report:
+    return solve field_survey(request)

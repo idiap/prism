@@ -17,6 +17,11 @@ from examples.language.refinement_loop.types import (
 )
 from prism.reasoning.methods.abductive import AbductionInput
 
+def mission_check(mission: MissionConstraints) -> Bool:
+    return mission.description != ""
+
+mission_validator = validator[value: MissionConstraints, MissionAccepted(value)](mission_check)
+
 def main(
     model_access: ModelGenerate,
     disclosure: ContextDisclose,
@@ -45,8 +50,7 @@ def main(
     )
     mission = try validate[MissionAccepted(mission_specification)](
         mission_specification,
-        validator = "lunar-mission-v1",
-        require = [mission_specification.description != ""],
+        validator = mission_validator,
     )
     initial_hypothesis = PlanHypothesis(
         mission = mission.value,

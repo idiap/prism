@@ -5,6 +5,7 @@
 
 from prism.reasoning.relation_contracts import ExactPreservation, StateIsEqual
 
+# Endpoint descriptions carry no assurance. Certifying relations name an exact claim.
 type Required[Before, After]:
     source: Before
     target: After
@@ -29,10 +30,10 @@ type Probed[Before, After]:
     source: Before
     target: After
 
-type Preserved[State]:
+type Preserved[State, Equality]:
     source: ExactPreservation[State]
     target: ExactPreservation[State]
-    equality: Proof[StateIsEqual()]
+    equality: Proof[Equality]
 
 relation Requires[Before, After](
     source: Before,
@@ -67,4 +68,4 @@ relation Probe[Before, After](
 relation Preserve[State](
     source: ExactPreservation[State],
     target: ExactPreservation[State],
-) -> Preserved[State]
+) -> Preserved[State, StateIsEqual(source.after, target.after)]

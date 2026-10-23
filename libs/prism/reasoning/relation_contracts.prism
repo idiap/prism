@@ -38,59 +38,42 @@ type Judgment[P, Status]:
     taints: Set[Taint]
     obligations: Set[Obligation[ClaimId, Status]]
 
-# Proof propositions used by conservation certificates.
-def IdentityIsPreserved() -> Prop:
-    return claim("the claim identity is preserved")
-
-def RevisionLinksPredecessor() -> Prop:
-    return claim("the revised claim identity links to its predecessor")
-
-def ScopeIsContained() -> Prop:
-    return claim("the target scope is contained in the source scope")
-
-def SourcesRemainReachable() -> Prop:
-    return claim("indispensable provenance sources remain reachable")
-
-def TaintIsDischarged() -> Prop:
-    return claim("the removed taint has typed discharge evidence")
-
-def AssuranceIsPreserved() -> Prop:
-    return claim("the target does not exceed the source assurance")
-
-def AssuranceIsAuthorized() -> Prop:
-    return claim("the stronger assurance has an authorized introduction")
-
-def ObligationIsDischarged() -> Prop:
-    return claim("the closed obligation has its required discharge")
-
-def StateIsEqual() -> Prop:
-    return claim("all epistemic state components are equal")
+# Abstract obligations name the exact state change; no domain witnesses are supplied.
+def IdentityIsPreserved[Before, After](before: Before, after: After) -> Prop
+def RevisionLinksPredecessor[Before, After](before: Before, after: After) -> Prop
+def ScopeIsContained[Before, After](before: Before, after: After) -> Prop
+def SourcesRemainReachable[Before, After](before: Before, after: After) -> Prop
+def TaintIsDischarged(taint: Taint) -> Prop
+def AssuranceIsPreserved[Before, After](before: Before, after: After) -> Prop
+def AssuranceIsAuthorized[Before, After](before: Before, after: After, policy: ClaimId) -> Prop
+def ObligationIsDischarged[Subject, Discharge](obligation: Obligation[Subject, Discharge]) -> Prop
+def StateIsEqual[State](before: State, after: State) -> Prop
 
 type IdentityChange[Before, After]:
     | IdentityPreserved(
         before: Before,
         after: After,
-        proof: Proof[IdentityIsPreserved()]
+        proof: Proof[IdentityIsPreserved(before, after)]
     )
     | IdentityRevised(
         before: Before,
         after: After,
-        proof: Proof[RevisionLinksPredecessor()]
+        proof: Proof[RevisionLinksPredecessor(before, after)]
     )
 
 type ScopeChange[Before, After]:
     before: Before
     after: After
-    containment: Proof[ScopeIsContained()]
+    containment: Proof[ScopeIsContained(before, after)]
 
 type ProvenanceChange[Before, After]:
     before: Before
     after: After
-    reachability: Proof[SourcesRemainReachable()]
+    reachability: Proof[SourcesRemainReachable(before, after)]
 
 type TaintDischarge:
     taint: Taint
-    discharge: Proof[TaintIsDischarged()]
+    discharge: Proof[TaintIsDischarged(taint)]
 
 type TaintChange[Before, After]:
     before: Before
@@ -101,17 +84,18 @@ type AssuranceChange[Before, After]:
     | AssurancePreserved(
         before: Before,
         after: After,
-        proof: Proof[AssuranceIsPreserved()]
+        proof: Proof[AssuranceIsPreserved(before, after)]
     )
     | AssuranceIntroduced(
         before: Before,
         after: After,
-        proof: Proof[AssuranceIsAuthorized()]
+        policy: ClaimId,
+        proof: Proof[AssuranceIsAuthorized(before, after, policy)]
     )
 
 type ObligationDischarge[Subject, Discharge]:
     obligation: Obligation[Subject, Discharge]
-    proof: Proof[ObligationIsDischarged()]
+    proof: Proof[ObligationIsDischarged(obligation)]
 
 type ObligationChange[Before, After, Subject, Discharge]:
     before: Before
@@ -127,8 +111,9 @@ type StateConservation[Before, After, Subject, Discharge]:
     obligations: ObligationChange[Before, After, Subject, Discharge]
 
 type ExactPreservation[State]:
-    state: State
-    proof: Proof[StateIsEqual()]
+    before: State
+    after: State
+    proof: Proof[StateIsEqual(before, after)]
 
 type JoinCertificate[Left, Right, Joined]:
     left: Left

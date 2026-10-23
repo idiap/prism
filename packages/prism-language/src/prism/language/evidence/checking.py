@@ -34,13 +34,10 @@ def check_material_inference(
             f"material evidence payload expects {expected_payload.render()}, "
             f"got {actual_payload.render()}"
         )
-    proposition_matches = policy.proposition.is_assignable_from(proposition) or (
-        policy.proposition.name == "Prop"
-        and (proposition.name == "Prop" or "(" in proposition.name)
-    )
+    proposition_matches = policy.proposition == proposition
     if not proposition_matches:
         raise MaterialInferenceError(
             f"material proposition expects {policy.proposition.render()}, "
             f"got {proposition.render()}"
         )
-    return CoreType("Result", (CoreType("Supported", (proposition,)), policy.error))
+    return CoreType("Result", (CoreType("Assessment", (proposition,)), policy.error))

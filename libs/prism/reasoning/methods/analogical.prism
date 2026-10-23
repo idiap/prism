@@ -10,4 +10,7 @@ type AnalogicalInput[SourceValue, TargetValue, CorrespondenceValue]:
 
 type Analogical[Conclusion, SourceValue, TargetValue, CorrespondenceValue] = (
     source: AnalogicalInput[SourceValue, TargetValue, CorrespondenceValue],
-) -> Conclusion
+) -> Conclusion with:
+    taxonomy = "prism-workflow-component-taxonomy@0.6.0"
+    primary_family = core_reasoning
+    reasoning_archetypes = [analogical]

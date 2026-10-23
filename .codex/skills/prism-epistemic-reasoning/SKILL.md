@@ -33,22 +33,24 @@ For each occurrence, choose the closest standard method by semantic role:
 
 Use the standard method's exact input record or a pure structural constructor. Do not declare a new method merely to reshape input. Declare a custom reasoning method only when no standard method performs the epistemic operation; state why the standard methods are insufficient and give the custom method one exact logical input and result.
 
-Deterministic collection, record assembly, validation, formatting, and other structural computation are functions or workflow components, not reasoning methods.
+Use fixed pure helpers for collection, record assembly, and formatting. They have no abstract materialization slot and expose structural execution with a not-applicable archetype. They may preserve incoming assurance but cannot introduce validation, support, or proof; those operations belong in materialization.
 
 ## Keep reasoning operationally pure
 
 A `reasoning` declaration:
 
 - has no `fails` clause or effect row;
-- contains only reasoning calls, nested reasoning plans, and pure infallible structural constructors;
+- contains method calls and fixed pure, infallible structural helpers/constructors;
 - contains no models, agents, callable skills, tools, sources, prompts, retries, effects, failures, permissions, adapters, provider choices, or backend settings; and
 - cannot execute until every abstract part is materialized.
+
+Operational purity is recursive through aliases, records, collections, callable types, and helper bodies. Domain strings are legal. State origin requirements using occurrence `with:` constraints such as `output.producers = [literal, computed]`; leave unrestricted origins unconstrained. Request assurance in the actual result/certificate type. Standard methods carry pinned taxonomy metadata; inspect canonical IDs before adding custom metadata, and never treat classification as proof.
 
 Keep the reasoning declaration in `reasoning.prism`, separate from executable implementation. Preserve descriptive domain names for occurrences and exact explicit data dependencies.
 
 ## Model topology and relations precisely
 
-- Give every leaf a unique output name and an explicit call. Use `sequence`, `parallel`, `choice`, and `repeat` for their actual semantics.
+- Give each leaf an output name and an explicit call; mutually exclusive choice arms must converge to matching names and types. Use `sequence`, `parallel`, `choice`, and `repeat` for their actual semantics.
 - Use `parallel` followed by a typed collector to form alternatives. Use `choice` only to select exactly one exhaustive case.
 - Attach `by Relation` only to an occurrence; composition blocks do not have the single explicit logical input a relation requires.
 - Declare every relation with exact source and target endpoints and an exact certificate: `|~` for `Supported[P]`, `|-` for `Proof[P]`, or `-> Certificate` for a nominal witness.
@@ -64,7 +66,7 @@ When the topology re-executes steps, use `repeat`; a sequential block, comment, 
 - Carry state by rebinding a visible, type-compatible value that the next iteration consumes.
 - Keep one-time initialization before `repeat` and post-loop validation after it when those steps should not recur.
 
-```prism
+```prism title="Explanatory fragment"
 [state: initialize(source)]
 repeat refinement_policy(10, until = state.accepted):
     [assessment: Assess(state)]
@@ -74,4 +76,4 @@ repeat refinement_policy(10, until = state.accepted):
 
 ## Check the result
 
-Run `uv run prism check` and `uv run prism compile` on the nearest real entry point that imports the reasoning. Confirm that every occurrence uses the closest semantic method, every relation has exact endpoints, every loop carries changing state, and no operational choice leaked into the reasoning file.
+Run `uv run prism check` and `uv run prism compile` on the nearest real entry point that imports the reasoning. Confirm that each epistemic occurrence uses the closest semantic method, fixed structure remains unclassified/not-applicable, every relation has exact endpoints, every loop carries changing state, and no operational choice leaked into the reasoning file.

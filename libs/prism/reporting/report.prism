@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-License-Identifier: MIT
+
+# Content is inert display data. Provenance does not confer assurance.
+type Section:
+    | Markdown(id: String, text: String)
+    | Html(id: String, text: String)
+    | Image(id: String, attachment: String, alt: String)
+    | Tabs(id: String, tabs: List[Tab])
+
+type Tab:
+    id: String
+    label: String
+    sections: List[Section]
+
+type TemplateSection:
+    | MarkdownSlot(id: String)
+    | HtmlSlot(id: String)
+    | ImageSlot(id: String)
+    | TabsSlot(id: String, tabs: List[TemplateTab])
+
+type TemplateTab:
+    id: String
+    sections: List[TemplateSection]
+
+type Template:
+    id: String
+    title: String
+    sections: List[TemplateSection]
+
+type TemplateChoice:
+    | NoTemplate
+    | WithTemplate(snapshot: Template)
+
+type Report:
+    id: String
+    title: String
+    sections: List[Section]
+    template: TemplateChoice

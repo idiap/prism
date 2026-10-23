@@ -14,7 +14,7 @@ def SameVersion(left: Nat, right: Nat) -> Prop:
 relation ApprovesRelease(
     source: DeductionInput[Proof[SameVersion(deployed, approved)]],
     target: Nat,
-) |- SameVersion(deployed, approved)
+) |- SameVersion(target, approved)
 
 reasoning ReleaseApproval(
     source: DeductionInput[Proof[SameVersion(deployed, approved)]],
@@ -22,5 +22,6 @@ reasoning ReleaseApproval(
     [version: Deductive[
         Nat,
         Proof[SameVersion(deployed, approved)],
-    ](source)] by ApprovesRelease
+    ](source)] by ApprovesRelease with:
+        output.producers = [literal, computed]
     return version

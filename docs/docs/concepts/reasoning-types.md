@@ -10,7 +10,7 @@ description: Choose the epistemic operation performed by each Prism reasoning oc
 slug: /concepts/reasoning-types
 ---
 
-A reasoning type states the epistemic operation an occurrence performs.
+A reasoning type declares the epistemic operation an occurrence intends to perform.
 Backend selection, provenance, and assurance remain separate.
 `Deductive[Conclusion, Premises]`, for example, describes derivation from
 explicit premises. Formal proof still requires `Proof[P]`.
@@ -37,7 +37,7 @@ The language imports these type aliases from `prism.reasoning.methods`.
 A `reasoning` declaration composes reasoning occurrences into a pure, reusable
 topology.
 
-```prism
+```prism title="Explanatory fragment"
 reasoning ReleaseReadiness(
     change: ReleaseCandidate,
 ) -> Supported[ReadyToDeploy()]:
@@ -51,13 +51,16 @@ reasoning ReleaseReadiness(
 ```
 
 The names on the left, `evidence`, `checks`, `defeaters`, and `finding`, are
-stable occurrence identities. They appear again in materialization and in the
+source occurrence names. Repeated executions have distinct instance identities. They appear again in materialization and in the
 runtime trace.
 
 Operational choices such as models, prompts, tools, effects, permissions,
 retries, and provider settings belong in materialization. An abstract reasoning
 declaration contains only the epistemic topology. Execution requires a concrete
-binding for every occurrence and attached relation.
+binding for every abstract method occurrence and attached relation. Fixed pure
+structural helpers need no configuration slot and cannot introduce stronger
+assurance. Their signatures and transitive bodies must contain no operational
+dependencies; domain strings are permitted.
 
 ## Composition
 
@@ -76,7 +79,7 @@ only to an occurrence, which has a single logical input.
 
 Materialization binds the abstract topology to executable callables.
 
-```prism
+```prism title="Explanatory fragment"
 release_readiness = ReleaseReadiness(
     evidence = capture_release,
     checks = derive_checks,
@@ -88,7 +91,7 @@ release_readiness = ReleaseReadiness(
 )
 ```
 
-Every occurrence and relation is bound exactly once. Concrete implementations
+Every abstract method occurrence and relation is bound exactly once. Concrete implementations
 may add failures and effects while preserving the declared topology and
 successful result types.
 
@@ -104,3 +107,17 @@ Continue with [provenance types](./provenance-types.md) and
 [assurance and inference](./assurance-types.md) for the other two dimensions.
 [Relations and materialization](./relations-materialization.md) explains the
 executable binding contract.
+
+## Explicit normalized defaults
+
+Standard method aliases carry pinned taxonomy facets. Custom method aliases
+may use `with:` metadata with a taxonomy identifier/version, `primary_family`,
+and `reasoning_archetypes`. Facet labels describe declared intent and do not
+prove inference validity. Without metadata, classification is `unclassified`.
+
+Occurrence `with:` blocks constrain `input` or `output` producers and ancestors,
+including nested paths. Unconstrained origin and unchecked assurance are
+visible defaults. Pure structural calls expose `execution_kind = structural`
+and `archetype_state = not_applicable`. No inference label is required for a
+collector. See the [language specification](https://github.com/idiap/prism/blob/main/notes/SYNTAX.md)
+for complete forms and [execution tracing](./execution-tracing.md) for outcomes.

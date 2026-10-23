@@ -10,95 +10,68 @@ description: Track how Prism values were generated, observed, or computed.
 slug: /concepts/provenance-types
 ---
 
-Provenance types record a value's origin and production history. Assurance
-remains a separate dimension. Generated values begin as `Generated[T]`, and
-deterministic computations begin as `Computed[T]`.
+Provenance records actual production activity and upstream dependencies.
+Assurance is a separate property: generated, acquired, asserted, and computed
+values begin unchecked unless they carry an independently introduced guarantee.
 
-## The three provenance categories
+## Origin wrappers and actual activities
 
-| Type | Meaning | Introduced by |
+| Type | Introduction | Meaning |
 | --- | --- | --- |
-| `Generated[T]` | A generative model produced a value of type `T`. | `generate[T](request, model, access)` |
-| `Evidence[T]` | A value of type `T` was observed with source provenance. | `observe(value, source, method)` or a typed source read |
-| `Computed[T]` | A deterministic procedure computed a value of type `T`. | `compute(value, procedure)` |
+| `Generated[T]` | Authorized `generate[T]` | Model-produced payload; fake generation is explicitly synthetic. |
+| `Evidence[T]` | `observe` or a typed source read | An assertion or an adapter-captured acquisition. |
+| `Computed[T]` | `compute(..., procedure = pure_function)` | Result of actually executing that function. |
 
-Transitions between these categories require explicit functions.
+The graph distinguishes `literal`, `supplied`, `asserted`, `generated`,
+`acquired`, `computed`, and `external_unknown` producers. The normalized origin
+constraint defaults to `unconstrained`. Wrappers impose compatible producer
+requirements; ordinary records retain origins through their value references.
 
-## Generated values
+`observe(value, source = "label", method = "description")` records a source
+assertion. The text cannot establish that a file, tool, or database was read.
+Actual source/effect adapters capture acquisitions and retain effect records.
+Available source metadata, implementation hashes, and synthetic markers remain
+inspectable alongside ancestry.
 
-Generation makes nondeterminism visible in both the result and effect row.
+## Execute transformations
 
-```prism
-def assess(
-    request: AssessmentRequest,
-    model: Model,
-    access: ModelGenerate,
-) -> Result[Generated[Assessment], ModelFailure] ! {AI.Generate}:
-    return generate[Assessment](request, model, access)
+This complete program returns computed evidence with assertion ancestry.
+
+```prism executable
+def increment(value: Int) -> Int:
+    return value + 1
+
+def main() -> Evidence[Int]:
+    packet = observe(3, source = "user assertion", method = "typed input")
+    return map_evidence(packet, transformation = increment)
 ```
 
-`Generated[Assessment]` records model origin. Stronger claims require an
-explicit validator, material support policy, or proof boundary.
+`map_evidence(packet, extra_inputs..., transformation = callable)` passes the
+packet's value and extra inputs to a pure, infallible callable.
+`combine_evidence(packets..., transformation = callable)` supplies packet values
+to a pure combiner. `compute(inputs..., procedure = callable)` invokes an
+ordinary pure function and returns `Computed[Result]`. Strings and supplied
+replacement results are no longer accepted transformation APIs.
 
-## Evidence values
+Projection preserves the selected value's producer. A helper that returns its
+input can therefore preserve that input's origin. New arithmetic records
+computation; neither case loses the relevant generated/acquired ancestors.
+Map keys and values have separate references, as do fields and collection
+items. Copying a generated field into a computed record preserves that field's
+model ancestry without marking unrelated literal fields as generated.
 
-`Evidence[T]` contains the observed value plus immutable provenance entries.
-Each entry can record the following details.
+## Preserve origin across assurance
 
-- Source and acquisition method.
-- Observation time.
-- Transformation history.
-- Assumptions.
-- Integrity status.
-- Additional typed runtime metadata.
+A validation can return `Validated[value: Generated[Draft], Acceptable(value)]`.
+The validator's acceptance does not remove the original generation. Similarly,
+proof pairing, accepted support, repeated state, and switch handoffs retain the
+value references they depend on.
 
-For example, the following function records a release request as evidence.
+The refinement tutorial uses a generated narrative inside a computed plan and
+then validates the plan. The [Reasoning Log](../editors/vscode-run-explorer.md#reasoning-log)
+shows the declared constraints, actual producer, upstream activities, and
+assurance separately. This is tracing of values and activities, not a complete
+machine-instruction trace or an external provenance database.
 
-```prism
-def capture_release(change: ReleaseCandidate) -> Evidence[ReleaseCandidate]:
-    return observe(
-        change,
-        source = "release request",
-        method = "typed application input",
-    )
-```
-
-Use `map_evidence` to transform evidence and `combine_evidence` to join packets.
-Both retain upstream provenance and append the named transformation.
-
-## Computed values
-
-Use `Computed[T]` for the result of a deterministic program, simulator, or
-checker when the procedure itself matters.
-
-```prism
-score = compute(candidate, procedure = "release-score-v2")
-```
-
-Determinism improves reproducibility. Specification checking requires
-`Validated[value: T, P(value)]` when a named validator has checked the exact
-value. A proposition checked by the kernel has type `Proof[P]`.
-
-## Provenance survives assurance
-
-Provenance and assurance can be nested while retaining both dimensions.
-
-```text
-Validated[
-  value: Generated[Assessment],
-  Acceptable(value)
-]
-```
-
-This type says that a model produced the assessment and a named validator
-accepted that exact generated value. Kernel proof requires a separate
-`Proof[P]`.
-
-Execution traces store provenance and assurance in separate fields. The
-[Reasoning Log](../editors/vscode-run-explorer.md#reasoning-log) can therefore
-show what happened without conflating origin with justification.
-
-[Sources, connections, and resources](./sources-connections-resources.md)
-explains how external reads introduce evidence. [Assurance and
-inference](./assurance-types.md) explains the guarantees that can wrap a
-provenanced value.
+See [assurance](./assurance-types.md) for the introduction boundaries and
+[sources](./sources-connections-resources.md) for acquisition capabilities.

@@ -82,15 +82,7 @@ def normalize_level(level: Level) -> Level:
 
     collect(level.left)
     collect(level.right)
-    unique = {repr(value): value for value in values}
-    values = list(unique.values())
-    closed = [value for value in values if level_to_int(value) is not None]
-    open_values = [value for value in values if level_to_int(value) is None]
-    if closed:
-        largest = max(closed, key=lambda value: level_to_int(value) or 0)
-        if level_to_int(largest) != 0 or not open_values:
-            open_values.append(largest)
-    values = sorted(open_values, key=repr)
+    values = _canonical_max_members(values)
     if len(values) == 1:
         return values[0]
     successors = [value for value in values if isinstance(value, LevelSucc)]
@@ -150,3 +142,16 @@ def substitute_level(level: Level, substitutions: Mapping[str, Level]) -> Level:
         substitute_level(level.left, substitutions),
         substitute_level(level.right, substitutions),
     )
+
+
+def _canonical_max_members(values: list[Level]) -> list[Level]:
+    unique = {repr(value): value for value in values}
+    values = list(unique.values())
+    closed = [value for value in values if level_to_int(value) is not None]
+    open_values = [value for value in values if level_to_int(value) is None]
+    if closed:
+        largest = max(closed, key=lambda value: level_to_int(value) or 0)
+        if level_to_int(largest) != 0 or not open_values:
+            open_values.append(largest)
+    values = sorted(open_values, key=repr)
+    return values

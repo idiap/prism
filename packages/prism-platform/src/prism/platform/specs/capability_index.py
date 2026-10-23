@@ -148,10 +148,7 @@ class CapabilityIndex(BaseModel):
             ensure_required_output_fields(skill)
             ensure_skill_capability_contract(skill)
             _put_unique(index.skills, skill.spec_id, skill, path)
-        for skill in index.skills.values():
-            tactic_id = _derived_tactic_id(skill)
-            if tactic_id not in index.tactics:
-                index.tactics[tactic_id] = _derived_tactic_from_skill(skill)
+        _derive_skill_tactics(index)
         for path in iter_yaml_files(base / "critics"):
             critic = CriticSpec.model_validate(load_yaml(path))
             ensure_critic_agent_contract(critic)
@@ -441,3 +438,10 @@ def _put_unique(
     if key in target:
         raise ValueError(f"Duplicate capability id `{key}` while loading `{path}`.")
     target[key] = value
+
+
+def _derive_skill_tactics(index: "CapabilityIndex") -> None:
+    for skill in index.skills.values():
+        tactic_id = _derived_tactic_id(skill)
+        if tactic_id not in index.tactics:
+            index.tactics[tactic_id] = _derived_tactic_from_skill(skill)

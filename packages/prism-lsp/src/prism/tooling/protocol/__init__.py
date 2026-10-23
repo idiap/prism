@@ -123,6 +123,7 @@ class PrismIdeCheckResult(BaseModel):
     symbols: list[PrismIdeSymbol] = Field(default_factory=list)
     type_spans: list[PrismIdeTypeSpan] = Field(default_factory=list)
     semantic_tokens: list[PrismIdeSemanticToken] = Field(default_factory=list)
+    occurrence_contracts: list[dict[str, Any]] = Field(default_factory=list)
     core_module: dict[str, Any] | None = None
 
 

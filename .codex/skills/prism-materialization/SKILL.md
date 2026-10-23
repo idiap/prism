@@ -21,7 +21,7 @@ Define the real success value and identify every abstract occurrence, relation e
 ## Bind the topology exactly
 
 - Configure a reasoning declaration through a direct named call such as `Plan(occurrence = implementation, occurrence_by = relation_builder)`.
-- Bind every occurrence and related edge exactly once. Do not add, omit, reorder, or rename epistemic steps while materializing them.
+- Bind every abstract method occurrence and related edge exactly once; fixed structural helpers have no occurrence slot. Do not add, omit, reorder, or rename epistemic steps while materializing them.
 - Return the exact successful result required by each reasoning method. Concrete implementations may add recoverable failures and effects; these become part of the resulting `Workflow` type.
 - Implement a relation edge as a pure two-input function over the occurrence's complete semantic input and target. Return the exact declared certificate, directly or as `Result[Certificate, Error]` when allowed.
 - When visible topology input differs from a method's semantic input, bind `<occurrence>_input` to a pure infallible adapter returning the exact method input type. Keep fallible preprocessing as an ordinary workflow step.
@@ -32,8 +32,16 @@ Define the real success value and identify every abstract occurrence, relation e
 
 1. Use pure functions, typed transformations, strict inference, deterministic validation, counterexample search, elaboration, and kernel checking wherever adequate.
 2. Add material inference or generation only for the exact nondeterministic subtask.
-3. Keep generated values as `Generated[T]` until an explicit validator succeeds. Never present `Supported[P]` as `Proof[P]`.
+3. Preserve actual generated ancestry through projection, computation, and validation. Never present `Supported[P]` or `Validated[...]` as `Proof[P]`.
 4. External provers or models may propose `ProofSyntax`; target-directed elaboration and the PRISM kernel must establish `Proof[P]`.
+
+## Introduce each guarantee through its actual operation
+
+- `compute(..., procedure = pure_callable)`, `map_evidence`, and `combine_evidence` execute pure, infallible transformations. Do not supply a replacement value or string label as the transformation. Preserve source assertions separately from adapter-captured acquisition.
+- Register `validator[value: T, P(value)](pure_boolean_callable)` and pass that validator to `validate[P(subject)]`. The exact subject is checked; Boolean lists or string validator labels are obsolete. Validation trusts the predicate and does not prove its soundness.
+- Build `material_policy(name, evaluator = typed_callable)`. `evidence |~[policy] P` yields an `Assessment[P]`; accepted, rejected, and inconclusive are completed decisions. Call `accept_support` to introduce `Supported[P]` only from acceptance. Evaluator failure remains distinct.
+- `elaborate_proof[P]`, `kernel.check`, and `verify(value, proof)` establish native assurance for the exact runtime subject. Runtime instantiation currently supports natural numbers and Booleans; do not invent formal representations of records or simulator claims. Retain assumptions and proof/environment hashes.
+- Check declared origin constraints against actual producers and upstream ancestry. A compatible alternative must preserve the exact types and assurance as well as permitted origins.
 
 ## Bound agentic work
 
@@ -67,4 +75,4 @@ uv run prism run path/to/main.prism --handler fake
 uv run pytest path/to/relevant_test.py
 ```
 
-Confirm that every occurrence, relation, adapter, and switch is bound; topology is preserved; capabilities are explicit; generated, supported, validated, and proven values remain distinct; and all declarations contribute to the returned result or assurance trace.
+Confirm that every abstract occurrence, relation, adapter, and switch is bound; topology is preserved; capabilities are explicit; generated, supported, validated, and proven values remain distinct; and all declarations contribute to the returned result or assurance trace.

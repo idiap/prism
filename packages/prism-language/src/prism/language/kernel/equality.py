@@ -53,54 +53,7 @@ def is_def_eq(
             return True
         if type(a) is not type(b):
             return False
-        if isinstance(a, Sort) and isinstance(b, Sort):
-            if a.level is None or b.level is None:
-                return a.level is b.level
-            return normalize_level(a.level) == normalize_level(b.level)
-        if isinstance(a, Local) and isinstance(b, Local):
-            return a.index == b.index
-        if isinstance(a, Const) and isinstance(b, Const):
-            return a.name == b.name and tuple(
-                normalize_level(item) for item in a.universe_arguments
-            ) == tuple(normalize_level(item) for item in b.universe_arguments)
-        if isinstance(a, Pi) and isinstance(b, Pi):
-            return equal(a.domain, b.domain, local_context) and equal(
-                a.codomain,
-                b.codomain,
-                local_context.push(a.name, a.domain),
-            )
-        if isinstance(a, Lam) and isinstance(b, Lam):
-            return equal(a.domain, b.domain, local_context) and equal(
-                a.body,
-                b.body,
-                local_context.push(a.name, a.domain),
-            )
-        if isinstance(a, App) and isinstance(b, App):
-            return equal(a.function, b.function, local_context) and equal(
-                a.argument, b.argument, local_context
-            )
-        if isinstance(a, Let) and isinstance(b, Let):
-            return (
-                equal(a.type, b.type, local_context)
-                and equal(a.value, b.value, local_context)
-                and equal(
-                    a.body,
-                    b.body,
-                    local_context.push(a.name, a.type, a.value),
-                )
-            )
-        if isinstance(a, InductiveRef | ConstructorRef | RecursorRef) and isinstance(
-            b, InductiveRef | ConstructorRef | RecursorRef
-        ):
-            return (
-                a.name == b.name
-                and len(a.arguments) == len(b.arguments)
-                and all(
-                    equal(x, y, local_context)
-                    for x, y in zip(a.arguments, b.arguments, strict=True)
-                )
-            )
-        return False
+        return _equal_structure(a, b, local_context, equal)
 
     return equal(left, right)
 
@@ -128,3 +81,58 @@ def _proof_irrelevant(environment, context, left, right, equal, budget) -> bool:
         and right_type_sort.level is None
         and equal(left_type, right_type, context)
     )
+
+
+def _equal_structure(a: Term, b: Term, local_context: Context, equal) -> bool:
+    if isinstance(a, Sort) and isinstance(b, Sort):
+        return _equal_sorts(a, b)
+    if isinstance(a, Local) and isinstance(b, Local):
+        return a.index == b.index
+    if isinstance(a, Const) and isinstance(b, Const):
+        return a.name == b.name and tuple(
+            normalize_level(item) for item in a.universe_arguments
+        ) == tuple(normalize_level(item) for item in b.universe_arguments)
+    if isinstance(a, Pi) and isinstance(b, Pi):
+        return equal(a.domain, b.domain, local_context) and equal(
+            a.codomain,
+            b.codomain,
+            local_context.push(a.name, a.domain),
+        )
+    if isinstance(a, Lam) and isinstance(b, Lam):
+        return equal(a.domain, b.domain, local_context) and equal(
+            a.body,
+            b.body,
+            local_context.push(a.name, a.domain),
+        )
+    if isinstance(a, App) and isinstance(b, App):
+        return equal(a.function, b.function, local_context) and equal(
+            a.argument, b.argument, local_context
+        )
+    if isinstance(a, Let) and isinstance(b, Let):
+        return (
+            equal(a.type, b.type, local_context)
+            and equal(a.value, b.value, local_context)
+            and equal(
+                a.body,
+                b.body,
+                local_context.push(a.name, a.type, a.value),
+            )
+        )
+    if isinstance(a, InductiveRef | ConstructorRef | RecursorRef) and isinstance(
+        b, InductiveRef | ConstructorRef | RecursorRef
+    ):
+        return (
+            a.name == b.name
+            and len(a.arguments) == len(b.arguments)
+            and all(
+                equal(x, y, local_context)
+                for x, y in zip(a.arguments, b.arguments, strict=True)
+            )
+        )
+    return False
+
+
+def _equal_sorts(a: Sort, b: Sort) -> bool:
+    if a.level is None or b.level is None:
+        return a.level is b.level
+    return normalize_level(a.level) == normalize_level(b.level)

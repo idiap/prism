@@ -14,7 +14,7 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class MaterialInference:
     evidence: Any
-    policy: str
+    policy: Any
     proposition: Any
     target: str | None = None
 

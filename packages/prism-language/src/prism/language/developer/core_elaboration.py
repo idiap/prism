@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Mapping
 
 from prism.language.kernel import (
     PROP,
@@ -24,6 +25,7 @@ from prism.language.kernel import (
     Pi,
     Term,
     apps,
+    infer,
     whnf,
 )
 from prism.language.verification import ProofElaborationError, RawProofTerm
@@ -51,10 +53,11 @@ def elaborate_type_text(
     text: str,
     environment: Environment,
     locals: tuple[CoreLocal, ...] = (),
+    symbols: Mapping[str, str] | None = None,
 ) -> Term:
     text = text.strip()
     if text.startswith("Proof[") and text.endswith("]"):
-        return elaborate_type_text(text[6:-1], environment, locals)
+        return elaborate_type_text(text[6:-1], environment, locals, symbols)
     if text == "Prop":
         return PROP
     if text == "Type":
@@ -68,26 +71,30 @@ def elaborate_type_text(
         name, separator, domain_text = binder.partition(":")
         if not separator or not name.strip() or not domain_text.strip():
             raise ProofElaborationError("forall requires a named typed binder")
-        domain = elaborate_type_text(domain_text, environment, locals)
+        domain = elaborate_type_text(domain_text, environment, locals, symbols)
         return Pi(
             name.strip(),
             domain,
             elaborate_type_text(
-                body, environment, (*locals, CoreLocal(name.strip(), domain))
+                body, environment, (*locals, CoreLocal(name.strip(), domain)), symbols
             ),
         )
     try:
         expression = parse_expression(text, SourceSpan(1))
     except ValueError as exc:
         raise ProofElaborationError(f"cannot elaborate core type `{text}`") from exc
-    return elaborate_expression(expression, environment, locals)
+    return elaborate_expression(expression, environment, locals, symbols)
 
 
 def elaborate_expression(
     expression: Expression,
     environment: Environment,
     locals: tuple[CoreLocal, ...] = (),
+    symbols: Mapping[str, str] | None = None,
 ) -> Term:
+    expression = _resolve_core_symbols(
+        expression, symbols or {}, {local.name for local in locals}
+    )
     if isinstance(expression, LiteralExpr):
         if isinstance(expression.value, bool):
             return ConstructorRef("Bool.true" if expression.value else "Bool.false")
@@ -97,20 +104,7 @@ def elaborate_expression(
             f"literal `{expression.value!r}` is not available in the proof fragment"
         )
     if isinstance(expression, NameExpr):
-        for offset, local in enumerate(reversed(locals)):
-            if local.name == expression.name:
-                return Local(offset)
-        aliases = {
-            "sum_range": "Nat.sum_range",
-            "rfl": "Eq.rfl",
-        }
-        name = aliases.get(expression.name, expression.name)
-        declaration = environment.get(name)
-        if declaration.kind == "inductive":
-            return InductiveRef(name)
-        if declaration.kind == "constructor":
-            return ConstructorRef(name)
-        return Const(name)
+        return _elaborate_name(expression, environment, locals)
     if isinstance(expression, FieldExpr):
         return elaborate_expression(
             NameExpr(_expression_name(expression), expression.span), environment, locals
@@ -127,17 +121,7 @@ def elaborate_expression(
             ),
         )
     if isinstance(expression, BinaryExpr):
-        left = elaborate_expression(expression.left, environment, locals)
-        right = elaborate_expression(expression.right, environment, locals)
-        if expression.operator == "+":
-            return apps(Const("Nat.add"), left, right)
-        if expression.operator == "*":
-            return apps(Const("Nat.mul"), left, right)
-        if expression.operator == "==":
-            return apps(InductiveRef("Eq"), InductiveRef("Nat"), left, right)
-        raise ProofElaborationError(
-            f"operator `{expression.operator}` is not available in the proof fragment"
-        )
+        return _elaborate_binary(expression, environment, locals)
     raise ProofElaborationError(
         f"`{type(expression).__name__}` is not available in the proof fragment"
     )
@@ -254,3 +238,82 @@ def _split_forall(text: str) -> tuple[str, str]:
         elif character == "," and depth == 0:
             return text[:index].strip(), text[index + 1 :].strip()
     raise ProofElaborationError("forall requires `,` before its body")
+
+
+def _elaborate_name(
+    expression: NameExpr, environment: Environment, locals: tuple[CoreLocal, ...]
+) -> Term:
+    for offset, local in enumerate(reversed(locals)):
+        if local.name == expression.name:
+            return Local(offset)
+    aliases = {
+        "sum_range": "Nat.sum_range",
+        "rfl": "Eq.rfl",
+    }
+    name = aliases.get(expression.name, expression.name)
+    declaration = environment.get(name)
+    if declaration.kind == "inductive":
+        return InductiveRef(name)
+    if declaration.kind == "constructor":
+        return ConstructorRef(name)
+    return Const(name)
+
+
+def _elaborate_binary(
+    expression: BinaryExpr, environment: Environment, locals: tuple[CoreLocal, ...]
+) -> Term:
+    left = elaborate_expression(expression.left, environment, locals)
+    right = elaborate_expression(expression.right, environment, locals)
+    if expression.operator == "+":
+        return apps(Const("Nat.add"), left, right)
+    if expression.operator == "*":
+        return apps(Const("Nat.mul"), left, right)
+    if expression.operator == "==":
+        return apps(
+            InductiveRef("Eq"), infer(environment, _context(locals), left), left, right
+        )
+    raise ProofElaborationError(
+        f"operator `{expression.operator}` is not available in the proof fragment"
+    )
+
+
+def reify_runtime_value(value: object, type_name: str) -> Term:
+    """Represent only the supported runtime scalars, without coercion."""
+    if type_name == "Nat" and type(value) is int and value >= 0:
+        return nat_literal(value)
+    if type_name == "Bool" and type(value) is bool:
+        return ConstructorRef("Bool.true" if value else "Bool.false")
+    raise ProofElaborationError(
+        f"runtime value {value!r} is not representable as native {type_name}"
+    )
+
+
+def _resolve_core_symbols(expression, symbols, locals_):
+    if isinstance(expression, NameExpr):
+        return (
+            replace(expression, name=symbols.get(expression.name, expression.name))
+            if expression.name not in locals_
+            else expression
+        )
+    if isinstance(expression, FieldExpr):
+        name = _expression_name(expression)
+        return NameExpr(symbols.get(name, name), expression.span)
+    if isinstance(expression, CallExpr):
+        return replace(
+            expression,
+            callee=_resolve_core_symbols(expression.callee, symbols, locals_),
+            arguments=tuple(
+                replace(
+                    argument,
+                    value=_resolve_core_symbols(argument.value, symbols, locals_),
+                )
+                for argument in expression.arguments
+            ),
+        )
+    if isinstance(expression, BinaryExpr):
+        return replace(
+            expression,
+            left=_resolve_core_symbols(expression.left, symbols, locals_),
+            right=_resolve_core_symbols(expression.right, symbols, locals_),
+        )
+    return expression

@@ -136,3 +136,4 @@ type RefineTrajectory = (TrajectoryRefinementState) -> LunarSource
 type LunarLandingError:
     | ModelFailure
     | ValidationError
+    | SupportError

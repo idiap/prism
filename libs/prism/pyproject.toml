@@ -20,6 +20,7 @@ stdlib = "prism_stdlib:module_root"
 [tool.setuptools.packages.find]
 where = ["src"]
 [tool.setuptools.data-files]
+"prism_modules/libs/prism/reporting" = ["reporting/*.prism"]
 "prism_modules/libs/prism/functions" = ["functions/*.prism"]
-"prism_modules/libs/prism/reasoning" = ["reasoning/*.prism"]
+"prism_modules/libs/prism/reasoning" = ["reasoning/*.prism", "reasoning/taxonomy.json"]
 "prism_modules/libs/prism/reasoning/methods" = ["reasoning/methods/*.prism"]

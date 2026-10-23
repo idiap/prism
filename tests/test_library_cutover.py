@@ -9,7 +9,7 @@ from pathlib import Path
 
 from prism.language import check, parse_source
 from prism.language.core import ModuleResolver
-from prism.sdk.workspace import WorkspaceModuleLoader
+from prism.sdk.workspace import WorkspaceModuleLoader, resolve_project_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,7 +30,12 @@ def test_every_remaining_prism_source_is_canonical_and_checked() -> None:
     for path in sources:
         source = path.read_text(encoding="utf-8")
         assert removed_forms.search(source) is None, path
-        check(parse_source(source, path=str(path)), module_loader=loader)
+        source_loader = WorkspaceModuleLoader(
+            project_root=resolve_project_root(path, fallback=ROOT),
+            search_paths=(ROOT,),
+            entry_points=False,
+        )
+        check(parse_source(source, path=str(path)), module_loader=source_loader)
 
     catalog_sources = sorted((ROOT / "catalog").rglob("*.prism"))
     for path in catalog_sources:
@@ -41,6 +46,11 @@ def test_every_remaining_prism_source_is_canonical_and_checked() -> None:
     docs_sources = sorted((ROOT / "docs/docs").rglob("*.prism"))
     docs_sources += sorted((ROOT / "docs/static").rglob("*.prism"))
     assert docs_sources == [ROOT / "docs/static/examples/quick-start/main.prism"]
+    for path in docs_sources:
+        check(
+            parse_source(path.read_text(encoding="utf-8"), path=str(path)),
+            module_loader=loader,
+        )
     assert not list((ROOT / "libs").glob("*/skills/*.prism"))
 
     manifest = tomllib.loads(
@@ -82,6 +92,19 @@ def test_standard_epistemic_contracts_are_exact_library_types() -> None:
     for module_name, (method, result_name) in expected_methods.items():
         contract = method_modules[module_name].aliases[method]
         assert contract.is_function
+        assert contract.binding_identity is not None
+        classification = method_modules[module_name].method_classifications[
+            contract.binding_identity
+        ]
+        expected_archetype = (
+            "evidential_assessment" if module_name == "evidential" else module_name
+        )
+        assert classification.archetype_state == "applicable"
+        assert any(
+            reference.facet == "reasoning_archetypes"
+            and reference.taxon == expected_archetype
+            for reference in classification.references
+        )
         assert len(contract.parameters) == 1
         assert contract.result is not None
         assert contract.result.name == result_name
@@ -123,7 +146,7 @@ def test_standard_epistemic_contracts_are_exact_library_types() -> None:
     proven_result = deductive.aliases["ProvenDeductive"].result
     assert proven_result is not None
     assert proven_result.render() == (
-        "Verified[value: Conclusion, Entails(source.context.value, value)]"
+        "Verified[value: Conclusion, Entails[Premises, Conclusion](source.context.value, value)]"
     )
     inductive = method_modules["inductive"]
     assert inductive.type_parameters["Inductive"] == (
@@ -231,7 +254,7 @@ def test_standard_epistemic_contracts_are_exact_library_types() -> None:
     builders = checked("libs/prism/reasoning/relation_builders.prism")
     for relation, certificate_name in expected_relations.items():
         contract = builders.callable_contracts[f"build_{relation.lower()}"]
-        assert len(contract.parameters) == 2
+        assert len(contract.parameters) == (3 if relation == "Preserve" else 2)
         assert contract.result.name == certificate_name
         assert contract.effects == ()
 
@@ -282,3 +305,37 @@ def test_module_resolver_accepts_library_modules() -> None:
         == "build_requires"
     )
     assert "prism.reasoning.relation_builders" in loader.iter_workspace_modules()
+
+
+def test_taxonomy_schema_validation_does_not_require_corpus(tmp_path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    taxonomy = json.loads((ROOT / "taxonomy/taxonomy.json").read_text())
+    path = tmp_path / "taxonomy.json"
+    path.write_text(json.dumps(taxonomy))
+    command = [
+        sys.executable,
+        str(ROOT / "taxonomy/validate.py"),
+        "--taxonomy",
+        str(path),
+    ]
+    valid = subprocess.run(
+        [*command, "--schema-only"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert valid.returncode == 0, valid.stderr + valid.stdout
+    assert "corpus coverage was not audited" in valid.stdout
+    missing = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert missing.returncode != 0
+    assert "corpus audit requires missing catalog input" in missing.stderr
+
+    taxa = taxonomy["facets"]["primary_family"]["taxa"]
+    taxa["Invalid Identifier"] = dict(taxa["core_reasoning"], status="unknown")
+    path.write_text(json.dumps(taxonomy))
+    invalid = subprocess.run(
+        [*command, "--schema-only"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert invalid.returncode == 1
+    assert "non-canonical taxon identifier" in invalid.stdout
+    assert "invalid or missing status" in invalid.stdout

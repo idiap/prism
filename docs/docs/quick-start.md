@@ -10,7 +10,7 @@ description: Create, check, compile, and run a small typed Prism program.
 slug: /quick-start
 ---
 
-This first program contains one record type, one pure function, and one entry
+This first program contains one record type, a proposition, a registered pure validator, and an entry
 point. It exercises the real parser, type checker, compiler, and runtime. The
 program requires neither a model nor provider credentials.
 
@@ -30,7 +30,7 @@ cd hello-prism
 
 Create `main.prism` with the following content.
 
-```prism title="main.prism"
+```prism title="main.prism" source="docs/static/examples/quick-start/main.prism"
 type ReleaseCandidate:
     tests_passed: Bool
     approved: Bool
@@ -38,14 +38,19 @@ type ReleaseCandidate:
 def ready(candidate: ReleaseCandidate) -> Bool:
     return candidate.tests_passed and candidate.approved
 
+def Ready(candidate: ReleaseCandidate) -> Prop
+
+release_validator = validator[value: ReleaseCandidate, Ready(value)](ready)
+
 candidate = ReleaseCandidate(tests_passed = True, approved = True)
 
-def main() -> Bool:
-    return ready(candidate)
+def main() -> Result[Validated[value: ReleaseCandidate, Ready(value)], ValidationError]:
+    return validate[Ready(candidate)](candidate, validator = release_validator)
 ```
 
 The record holds the facts to evaluate. `ready` is an ordinary typed function,
-and `main` returns the useful domain result.
+and the typed registration associates it with `Ready`. `main` returns the
+actual candidate with validation assurance when the check accepts it.
 
 ## Check the program
 
@@ -67,7 +72,7 @@ runtime backend.
 ```
 
 Compilation prints the program contract, including its result, failures, and
-effects. This program returns `Bool` and has no effects.
+effects. This program returns `Result[Validated[value: ReleaseCandidate, Ready(value)], ValidationError]` and has no effects.
 
 ## Run it
 
@@ -78,7 +83,10 @@ generative effects, so the fake handler supplies everything it needs.
 /path/to/prism/.venv/bin/prism run main.prism --handler fake
 ```
 
-The run is accepted and its result is `true`.
+The run is accepted and returns `Ok` containing the validated candidate with
+both fields `true`. Set `approved = False` to obtain a rejected run and
+`ValidationError`. The validator hash and exact claim appear in the trace.
+Validation expresses trust in this predicate; it is not a kernel proof.
 
 ## What just happened?
 

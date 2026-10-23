@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-License-Identifier: MIT
+
+import prism.reporting.report as r
+
+def describe(observation: String) -> String:
+    return "## Field observation\n\n" + observation
+
+def create_report(with_template: Bool) -> r.Report:
+    observation = observe("The survey recorded twelve birds.", source="field notebook")
+    narrative = compute(observation.value, procedure=describe)
+    summary: r.Section = r.Markdown(id="summary", text=narrative.value)
+    html: r.Section = r.Html(id="html", text="<h2>Survey details</h2><p>Twelve birds were recorded during the morning survey.</p>")
+    image: r.Section = r.Image(id="image", attachment="figure", alt="Twelve birds observed")
+    method: r.Section = r.Markdown(id="method", text="The notebook is a source assertion. Formatting it does not prove the observation.")
+    nested: r.Section = r.Tabs(id="nested", tabs=[r.Tab(id="figure-tab", label="Figure", sections=[image]), r.Tab(id="method-tab", label="Method", sections=[method])])
+    sections: List[r.Section] = [r.Tabs(id="outer", tabs=[r.Tab(id="overview", label="Overview", sections=[summary]), r.Tab(id="details", label="Details", sections=[html, nested])])]
+    html_slot: r.TemplateSection = r.HtmlSlot(id="html")
+    nested_slot: r.TemplateSection = r.TabsSlot(id="nested", tabs=[r.TemplateTab(id="figure-tab", sections=[r.ImageSlot(id="image")]), r.TemplateTab(id="method-tab", sections=[r.MarkdownSlot(id="method")])])
+    slots: List[r.TemplateSection] = [r.TabsSlot(id="outer", tabs=[r.TemplateTab(id="overview", sections=[r.MarkdownSlot(id="summary")]), r.TemplateTab(id="details", sections=[html_slot, nested_slot])])]
+    present: r.TemplateChoice = r.WithTemplate(snapshot=r.Template(id="survey-layout", title="Field survey", sections=slots))
+    absent: r.TemplateChoice = r.NoTemplate()
+    template = present if with_template else absent
+    return r.Report(id="field-survey", title="Typed field report", sections=sections, template=template)

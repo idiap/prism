@@ -15,6 +15,9 @@ dependencies = []
 [dependency-groups]
 dev = [
   "bandit[toml]>=1.8.6",
+  "grimp>=3.17",
+  "import-linter>=2.15",
+  "packaging>=26.0",
   "pre-commit>=4.3.0",
   "pyright>=1.1.411",
   "pytest>=8.0",
@@ -65,7 +68,10 @@ include = [
 ]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I"]
+select = ["E4", "E7", "E9", "F", "I", "C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 9
 
 [tool.bandit]
 exclude_dirs = ["tests"]
@@ -141,3 +147,167 @@ testpaths = ["tests"]
 # Full end-to-end pipeline tests are excluded by default; run them with `-m e2e`.
 addopts = "-n auto -m 'not e2e'"
 markers = ["e2e: full end-to-end pipeline tests, excluded by default (run with -m e2e)"]
+
+[tool.importlinter]
+root_packages = [
+  "prism.language",
+  "prism.transpiler",
+  "prism.runtime",
+  "prism.sdk",
+  "prism.adapters.codex",
+  "prism.adapters.litellm",
+  "prism.adapters.python",
+  "prism.platform",
+  "prism.tooling.cli",
+  "prism.tooling.lsp",
+  "prism.tooling.protocol",
+  "prism.tooling.ide_server",
+  "prism.tooling.workbench",
+  "prism_stdlib",
+]
+include_external_packages = true
+exclude_type_checking_imports = false
+
+[[tool.importlinter.contracts]]
+id = "language-layers"
+name = "Language layers only depend downward"
+type = "layers"
+containers = ["prism.language"]
+layers = [
+  "developer",
+  "interop",
+  "workflows",
+  "evidence",
+  "effects",
+  "verification",
+  "core",
+  "kernel",
+]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+id = "language-isolation"
+name = "Language is independent of execution and tooling"
+type = "forbidden"
+source_modules = [
+  "prism.language",
+]
+forbidden_modules = [
+  "prism.transpiler",
+  "prism.runtime",
+  "prism.sdk",
+  "prism.adapters.*",
+  "prism.platform",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "transpiler-isolation"
+name = "Transpiler is independent of execution and tooling"
+type = "forbidden"
+source_modules = [
+  "prism.transpiler",
+]
+forbidden_modules = [
+  "prism.runtime",
+  "prism.sdk",
+  "prism.adapters.*",
+  "prism.platform",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "runtime-isolation"
+name = "Runtime is independent of providers and applications"
+type = "forbidden"
+source_modules = [
+  "prism.runtime",
+]
+forbidden_modules = [
+  "prism.sdk",
+  "prism.adapters.*",
+  "prism.platform",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "adapter-isolation"
+name = "Adapters are independent of applications"
+type = "forbidden"
+source_modules = [
+  "prism.adapters.*",
+]
+forbidden_modules = [
+  "prism.sdk",
+  "prism.platform",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "sdk-isolation"
+name = "SDK is independent of providers and applications"
+type = "forbidden"
+source_modules = [
+  "prism.sdk",
+]
+forbidden_modules = [
+  "prism.adapters.*",
+  "prism.platform",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "platform-isolation"
+name = "Platform is independent of providers and frontends"
+type = "forbidden"
+source_modules = [
+  "prism.platform",
+]
+forbidden_modules = [
+  "prism.adapters.*",
+  "prism.sdk",
+  "prism.tooling.*",
+  "prism_stdlib",
+]
+
+[[tool.importlinter.contracts]]
+id = "lightweight-language-server"
+name = "Language server does not require optional execution packages"
+type = "forbidden"
+# Optional execution entry points; pytest verifies these imports remain lazy.
+ignore_imports = [
+  "prism.tooling.ide_server -> prism.tooling.workbench.service",
+  "prism.sdk.workspace -> prism.runtime.knowledge",
+]
+unmatched_ignore_imports_alerting = "error"
+source_modules = [
+  "prism.tooling.lsp",
+  "prism.tooling.protocol",
+  "prism.tooling.ide_server",
+]
+forbidden_modules = [
+  "prism.runtime",
+  "prism.adapters.*",
+  "prism.platform",
+]
+
+[[tool.importlinter.contracts]]
+id = "language-provider-dependencies"
+name = "Language does not import provider dependencies"
+type = "forbidden"
+source_modules = [
+  "prism.language",
+]
+forbidden_modules = [
+  "litellm",
+  "pydantic",
+  "yaml",
+  "sympy",
+  "typer",
+  "dotenv",
+]

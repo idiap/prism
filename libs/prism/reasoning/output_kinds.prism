@@ -50,18 +50,14 @@ type EpistemicDecision[Subjects]:
 type CalibrationDecision[Subjects]:
     subjects: Subjects
     disposition: CalibrationDisposition
-    policy_authorization: Proof[CalibrationIsAuthorized()]
-    no_new_claim: Proof[CalibrationCreatesNoClaim()]
-    no_new_evidence: Proof[CalibrationCreatesNoEvidence()]
+    policy: ClaimId
+    policy_authorization: Proof[CalibrationIsAuthorized(subjects, disposition, policy)]
+    no_new_claim: Proof[CalibrationCreatesNoClaim(subjects, disposition)]
+    no_new_evidence: Proof[CalibrationCreatesNoEvidence(subjects, disposition)]
 
-def CalibrationIsAuthorized() -> Prop:
-    return claim("the calibration disposition is authorized by its policy")
-
-def CalibrationCreatesNoClaim() -> Prop:
-    return claim("calibration creates no substantive claim")
-
-def CalibrationCreatesNoEvidence() -> Prop:
-    return claim("calibration creates no object-level evidence")
+def CalibrationIsAuthorized[Subjects](subjects: Subjects, disposition: CalibrationDisposition, policy: ClaimId) -> Prop
+def CalibrationCreatesNoClaim[Subjects](subjects: Subjects, disposition: CalibrationDisposition) -> Prop
+def CalibrationCreatesNoEvidence[Subjects](subjects: Subjects, disposition: CalibrationDisposition) -> Prop
 
 type ModelAssumption:
     identity: ClaimId
@@ -110,10 +106,10 @@ type UnavailableReason:
 type KnowledgeAdmission[Proposal, Schema, Version]:
     proposal: Proposal
     target: KnowledgeBase[Schema, Version]
-    authorization: Proof[KnowledgeAdmissionIsAuthorized()]
+    policy: ClaimId
+    authorization: Proof[KnowledgeAdmissionIsAuthorized(proposal, target, policy)]
 
-def KnowledgeAdmissionIsAuthorized() -> Prop:
-    return claim("the proposal is authorized for knowledge-base admission")
+def KnowledgeAdmissionIsAuthorized[Proposal, Schema, Version](proposal: Proposal, target: KnowledgeBase[Schema, Version], policy: ClaimId) -> Prop
 
 # Semantic ports are nominal or assurance-preserving aliases, never artifact labels.
 type Observation[Value] = Evidence[Value]
@@ -121,7 +117,7 @@ type Witness[Value] = Evidence[Value]
 type Candidate[P, Status] = Judgment[P, Status]
 type Premise[P, Status] = Judgment[P, Status]
 type Calibrated[Subjects] = CalibrationDecision[Subjects]
-type Assessment[Subjects] = EpistemicDecision[Subjects]
+type EpistemicAssessment[Subjects] = EpistemicDecision[Subjects]
 
 type Delta[Before, After]:
     before: Before

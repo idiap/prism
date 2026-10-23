@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-from prism.reasoning.relation_contracts import ExactPreservation
+from prism.reasoning.relation_contracts import ExactPreservation, StateIsEqual
 from prism.reasoning.relations import (
     Assumed,
     CalibratedRelation,
@@ -53,5 +53,6 @@ def build_probe[Before, After](
 def build_preserve[State](
     source: ExactPreservation[State],
     target: ExactPreservation[State],
-) -> Preserved[State]:
-    return Preserved(source = source, target = target, equality = target.proof)
+    equality: Proof[StateIsEqual(source.after, target.after)],
+) -> Preserved[State, StateIsEqual(source.after, target.after)]:
+    return Preserved(source = source, target = target, equality = equality)

@@ -17,6 +17,10 @@ license-files = ["LICENSES/MIT.txt"]
 requires-python = ">=3.12"
 dependencies = ["prism-language==1.0.0"]
 
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
+neo4j = ["neo4j"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["prism.runtime*"]

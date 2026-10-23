@@ -83,8 +83,13 @@ class PrismLanguageService:
                 program,
                 checked.globals,
                 callable_contracts=checked.callable_contracts,
+                occurrence_contracts=checked.occurrence_contracts,
                 project_root=root,
             ),
+            occurrence_contracts=[
+                dataclasses.asdict(contract)
+                for contract in checked.occurrence_contracts.values()
+            ],
             type_spans=build_type_index(program, elaborate(checked)),
             semantic_tokens=build_semantic_index(program),
             core_module={
@@ -135,6 +140,7 @@ class PrismLanguageService:
                 program,
                 checked.globals,
                 callable_contracts=checked.callable_contracts,
+                occurrence_contracts=checked.occurrence_contracts,
                 project_root=root,
             )
         return definition_at(
@@ -184,24 +190,12 @@ class PrismLanguageService:
             return []
         receiver = receiver_match.group(1)
 
-        candidate_source = source
-        try:
-            program = parse_source(candidate_source, path=str(document_path))
-            checked = check(program, modules=modules)
-        except (PrismSyntaxError, PrismTypeError, ValueError):
-            if not lines[line].lstrip().startswith("on "):
-                return []
-            sanitized = list(lines)
-            sanitized[line] = ""
-            candidate_source = "\n".join(sanitized)
-            if source.endswith("\n"):
-                candidate_source += "\n"
-            try:
-                program = parse_source(candidate_source, path=str(document_path))
-                checked = check(program, modules=modules)
-            except (PrismSyntaxError, PrismTypeError, ValueError):
-                return []
-
+        candidate = self._check_completion_source(
+            source, lines, line, document_path, modules
+        )
+        if candidate is None:
+            return []
+        program, checked = candidate
         reasoning = self._reasoning_at(program, line)
         if reasoning is None:
             return []
@@ -221,24 +215,7 @@ class PrismLanguageService:
             )
             for constructor in variants
         ]
-        record = checked.record_contracts.get(
-            output.name
-        ) or checked.record_contracts.get(resolved.name)
-        if record is not None:
-            substitutions = dict(
-                zip(record.type_parameters, output.arguments, strict=False)
-            )
-            for field in record.fields:
-                field_type = self._substitute(field.type, substitutions)
-                if field_type.name == "Bool":
-                    result.append(
-                        PrismIdeCompletionItem(
-                            label=field.name,
-                            kind="field",
-                            detail=f"{field.name}: {field_type.render()}",
-                            type_text=output.render(),
-                        )
-                    )
+        self._disposition_field_completions(checked, output, resolved, result)
         return sorted(result, key=lambda item: item.label)
 
     def _reasoning_configuration_completions(
@@ -257,22 +234,10 @@ class PrismLanguageService:
         )
         if current_program is None:
             return []
-        baseline_source = source
-        try:
-            baseline_program = parse_source(baseline_source, path=str(document_path))
-            checked = check(baseline_program, modules=modules)
-        except (PrismSyntaxError, PrismTypeError, ValueError):
-            if not document_path.exists():
-                return []
-            baseline_source = document_path.read_text(encoding="utf-8")
-            try:
-                baseline_program = parse_source(
-                    baseline_source, path=str(document_path)
-                )
-                checked = check(baseline_program, modules=modules)
-            except (PrismSyntaxError, PrismTypeError, ValueError):
-                return []
-
+        baseline = self._check_configuration_baseline(source, document_path, modules)
+        if baseline is None:
+            return []
+        baseline_program, checked = baseline
         call = self._call_at(current_program, line + 1, character)
         if call is None:
             return []
@@ -308,26 +273,9 @@ class PrismLanguageService:
         prefix = source.splitlines()[line][:character]
         value_match = re.search(r"([A-Za-z_]\w*)\s*=\s*[A-Za-z_\w.]*$", prefix)
         if value_match is not None:
-            slot = value_match.group(1)
-            if slot not in expected_names:
-                return []
-            expected_type = expected_types.get(slot)
-            if expected_type is None:
-                return []
-            return sorted(
-                (
-                    PrismIdeCompletionItem(
-                        label=name,
-                        kind="field",
-                        detail=f"{name}: {candidate.type.render()}",
-                        type_text=candidate.type.render(),
-                    )
-                    for name, candidate in checked.globals.items()
-                    if candidate.type == expected_type
-                ),
-                key=lambda item: item.label,
+            return self._configuration_value_completions(
+                value_match.group(1), expected_names, expected_types, checked
             )
-
         result = []
         for name in expected_names:
             if name in supplied:
@@ -439,11 +387,15 @@ class PrismLanguageService:
                     visit(child)
 
         visit(declaration.composition)
-        occurrences = tuple(node.alias for node in nodes if node.alias)
         method_contracts = (
             checked.reasoning_methods.get(declaration.name, {})
             if checked is not None
             else {}
+        )
+        occurrences = (
+            tuple(method_contracts)
+            if checked is not None
+            else tuple(node.alias for node in nodes if node.alias)
         )
         inputs = tuple(
             f"{node.alias}_input"
@@ -575,3 +527,83 @@ class PrismLanguageService:
             end_character=len(source_line) if source_line else None,
             line_text=source_line,
         )
+
+    def _check_completion_source(self, source, lines, line, document_path, modules):
+        candidate_source = source
+        try:
+            program = parse_source(candidate_source, path=str(document_path))
+            checked = check(program, modules=modules)
+        except (PrismSyntaxError, PrismTypeError, ValueError):
+            if not lines[line].lstrip().startswith("on "):
+                return None
+            sanitized = list(lines)
+            sanitized[line] = ""
+            candidate_source = "\n".join(sanitized)
+            if source.endswith("\n"):
+                candidate_source += "\n"
+            try:
+                program = parse_source(candidate_source, path=str(document_path))
+                checked = check(program, modules=modules)
+            except (PrismSyntaxError, PrismTypeError, ValueError):
+                return None
+        return program, checked
+
+    def _check_configuration_baseline(self, source, document_path, modules):
+        baseline_source = source
+        try:
+            baseline_program = parse_source(baseline_source, path=str(document_path))
+            checked = check(baseline_program, modules=modules)
+        except (PrismSyntaxError, PrismTypeError, ValueError):
+            if not document_path.exists():
+                return None
+            baseline_source = document_path.read_text(encoding="utf-8")
+            try:
+                baseline_program = parse_source(
+                    baseline_source, path=str(document_path)
+                )
+                checked = check(baseline_program, modules=modules)
+            except (PrismSyntaxError, PrismTypeError, ValueError):
+                return None
+        return baseline_program, checked
+
+    def _configuration_value_completions(
+        self, slot, expected_names, expected_types, checked
+    ):
+        if slot not in expected_names:
+            return []
+        expected_type = expected_types.get(slot)
+        if expected_type is None:
+            return []
+        return sorted(
+            (
+                PrismIdeCompletionItem(
+                    label=name,
+                    kind="field",
+                    detail=f"{name}: {candidate.type.render()}",
+                    type_text=candidate.type.render(),
+                )
+                for name, candidate in checked.globals.items()
+                if candidate.type == expected_type
+            ),
+            key=lambda item: item.label,
+        )
+
+    def _disposition_field_completions(self, checked, output, resolved, result) -> None:
+        record = checked.record_contracts.get(
+            output.name
+        ) or checked.record_contracts.get(resolved.name)
+        if record is not None:
+            substitutions = dict(
+                zip(record.type_parameters, output.arguments, strict=False)
+            )
+            for field in record.fields:
+                field_type = self._substitute(field.type, substitutions)
+                if field_type.name == "Bool":
+                    result.append(
+                        PrismIdeCompletionItem(
+                            label=field.name,
+                            kind="field",
+                            detail=f"{field.name}: {field_type.render()}",
+                            type_text=output.render(),
+                        )
+                    )

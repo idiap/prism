@@ -10,174 +10,103 @@ description: Represent material support, deterministic validation, and propositi
 slug: /concepts/assurance-types
 ---
 
-Assurance types state why a value or proposition may be accepted. Prism keeps
-material support, deterministic validation, and formal proof as separate
-guarantees. Every transition names the policy, validator, elaborator, or kernel
-operation that justifies it.
+Assurance is independent of reasoning classification and origin. A method label,
+a deterministic run, and a source assertion do not establish acceptance.
 
-## Propositions
+## Exact claims
 
-`Prop` is the type of propositions. A pure proposition can have a body.
+A proposition is a pure `Prop` declaration. Its application checks argument
+arity/types and retains resolved module identity, dependent binders, and actual
+runtime values. Rendered names do not establish claim equality.
 
-```prism
-def Ready(change: Change) -> Prop:
-    return TestsPass(change) and Approved(change)
-```
+## Assurance contracts
 
-An abstract proposition may omit its body. The declaration names the claim and
-leaves its support or proof to a materialization.
-
-```prism
-def Addresses(draft: Draft, critique: Critique) -> Prop
-```
-
-Propositions compose with `and`, `or`, `not`, `->`, `forall`, and `exists`.
-A Boolean computes a truth value. A proposition can appear as an index in
-`Supported[P]`, `Proof[P]`, and other assurance types.
-
-## Assurance levels
-
-| Type | Guarantee |
+| Type | Meaning |
 | --- | --- |
-| `T` | An ordinary value with no additional assurance. |
-| `Supported[P]` | Evidence was assessed under a named material policy for `P`. |
-| `Validated[value: T, P(value)]` | A named deterministic validator accepted this exact value against `P`. |
-| `CoreTerm[P]` | Proof source was elaborated for `P` and awaits kernel checking. |
-| `Proof[P]` | Prism's trusted kernel checked a strict proof of `P`. |
-| `Verified[value: T, P(value)]` | The exact value is paired with a kernel checked proof. |
+| Ordinary `T` | Unchecked assurance. |
+| `Assessment[P]` | A completed accepted, rejected, or inconclusive policy decision. |
+| `Supported[P]` | An accepted assessment was explicitly admitted as support. |
+| `Validated[value: T, P(value)]` | A registered validator accepted this exact value. |
+| `CoreTerm[P]` | An elaborated candidate awaiting kernel checking. |
+| `Proof[P]` | A native derivation of the exact target, retaining assumptions. |
+| `Verified[value: T, P(value)]` | The exact value paired with a checked proof about it. |
 
-Protected assurance types have no public constructors or implicit conversions.
+Protected types have no public constructors, implicit conversions, or promotion
+through `Any`. External tools can propose ordinary values and proof syntax;
+they cannot create protected assurance.
 
-## Material support
+## Material assessment and accepted support
 
-Material inference uses `|~` and requires an explicit policy.
+`material_policy(name, evaluator = callable)` binds a typed evaluator receiving
+the evidence and actual claim arguments. Its effects and failure type are
+preserved. The name labels the policy; it cannot replace evaluation.
 
-```prism
-support = observations |~[engineering_policy] Promising(design)
+```prism title="Explanatory fragment"
+assessment = try observations |~[engineering_policy] Promising(design)
+support = try accept_support(assessment)
 ```
 
-For a compatible `MaterialPolicy`, the expression has this contract.
+The first expression returns `Result[Assessment[Promising(design)], Failure]`.
+A successful policy execution can still reject the claim or leave it
+inconclusive. `Err(Failure)` means evaluation did not complete.
+`accept_support` returns `Supported` only for an accepted assessment; otherwise
+it returns `SupportError`. There is no rejected `Supported` value.
 
-```text
-Evidence[Observation] |~[policy] Proposition
-    -> Result[Supported[Proposition], Failure] ! Effects
+A `|~` relation requires accepted support for its actual source and target.
+Support is defeasible and cannot become proof through a method label.
+
+## Registered validation
+
+This complete program validates a positive number.
+
+```prism executable
+def Positive(value: Int) -> Prop
+
+def positive(value: Int) -> Bool:
+    return value > 0
+
+positive_validator = validator[value: Int, Positive(value)](positive)
+
+def main() -> Result[Validated[value: Int, Positive(value)], ValidationError]:
+    return validate[Positive(3)](3, validator = positive_validator)
 ```
 
-Material support is defeasible. New evidence or a changed policy can alter the
-status.
+Registration requires a pure, infallible Boolean callable with the exact input
+type. Validation invokes it on the subject and records its identity, hash, and
+claim. A false result yields `ValidationError`. String labels and precomputed
+Boolean requirements cannot substitute for the validator.
 
-### Support status and operational failure
+The registration expresses trust in this implementation's interpretation of
+`Positive`; it does not prove soundness. Validation preserves the exact input
+and its provenance, including generated data inside a validated record.
 
-A completed policy assessment returns `Supported[P]`. The value records an
-accepted or rejected status together with the policy and evidence trace.
+## Native proof and pairing
 
-An `Err(error)` means the policy evaluator could not complete. A rejected
-`Supported[P]` means the evaluator completed and its requirements were not
-satisfied.
+```prism executable
+def Same(left: Nat, right: Nat) -> Prop:
+    return left == right
 
-| Result | Meaning |
-| --- | --- |
-| Accepted `Supported[P]` | The named policy supports `P`. |
-| Rejected `Supported[P]` | The named policy does not support `P` for this evidence. |
-| `Err(Failure)` | The policy evaluator failed to produce a decision. |
-
-`|~` only introduces material support. It cannot produce `Proof[P]`.
-
-## Validation
-
-Validation checks one exact value against a proposition.
-
-```prism
-validated = validate[Acceptable(candidate)](
-    candidate,
-    validator = "release-policy-v2",
-    require = checks,
-)
+def main() -> Result[Verified[value: Nat, Same(value, 7)], ProofError]:
+    version: Nat = 7
+    term = try elaborate_proof[Same(version, 7)]("rfl")
+    proof = try kernel.check(term)
+    return Ok(verify(version, proof))
 ```
 
-The result is `Validated[value: T, P(value)]` or `ValidationError`. The type
-retains the exact input, including any provenance wrapper.
+Elaboration targets the actual value-specific proposition; the kernel checks
+the term; `verify` checks that the proof refers to the paired value. A proof
+about `7` cannot certify `9`, even if a local binding shadows a global name.
+The trace retains proof, proposition, environment hashes, and axiom dependencies.
 
-```text
-Validated[
-    value: Generated[Assessment],
-    Acceptable(value),
-]
-```
+Runtime value instantiation currently supports native natural numbers and
+Booleans. Unsupported records, strings, floats, and negative integers receive
+a diagnostic. Abstract propositions and arbitrary domain models are not
+automatically formalized. A conditional theorem retains its assumptions and
+does not establish their real-world truth.
 
-Validation establishes that a named deterministic check accepted the value.
-Kernel assurance for the validator requires a separate proof of its soundness.
+The strict release example proves a property of its returned version. The
+refinement example validates under a simulator model and supplies accepted
+material support; it does not prove physical landing safety.
 
-## Strict inference
-
-Strict inference uses `|-` in theorem statements and typed proof obligations.
-A theorem consumes proof premises and returns a proof of its conclusion.
-
-```prism
-theorem ready_from_parts(
-    change: Change,
-    tests: Proof[TestsPass(change)],
-    approval: Proof[Approved(change)],
-) : {tests, approval} |- Ready(change) := by
-    unfold Ready
-    exact And.intro(tests, approval)
-```
-
-The premises inside `{}` are proof values. The tactic block constructs a core
-term. The trusted kernel checks that term before it returns
-`Proof[Ready(change)]`.
-
-Core tactics include these operations.
-
-```text
-exact  assumption  intro  apply  constructor  cases  induction
-rewrite  unfold  simp  decide
-```
-
-## Proof source from an external system
-
-A model or external prover may propose proof syntax. Prism applies two native
-boundaries before the proposition gains strict assurance.
-
-```text
-proof source
-    -> elaborate_proof[P]
-    -> CoreTerm[P]
-    -> kernel.check
-    -> Proof[P]
-```
-
-Elaboration checks the source against a proposition chosen by the Prism caller.
-The kernel checks the elaborated term. External code cannot construct
-`CoreTerm[P]` or `Proof[P]` through a tool or Python effect.
-
-## Verified values
-
-`Verified[value: T, P(value)]` keeps a useful domain value and its proof
-together. The value remains available through `.value` while the verified type
-retains its proof.
-
-```prism
-verified = verify(candidate, proof)
-```
-
-Use this type when a consumer needs the value and kernel assurance about that
-exact value.
-
-## Choose the required assurance
-
-| Requirement | Result type |
-| --- | --- |
-| Ordinary computation | `T` |
-| Defeasible policy decision | `Supported[P]` |
-| Deterministic acceptance of one value | `Validated[value: T, P(value)]` |
-| Strict derivation of a proposition | `Proof[P]` |
-| Value paired with strict derivation | `Verified[value: T, P(value)]` |
-
-Reasoning strategy and provenance remain independent. A `Deductive`
-occurrence identifies an epistemic operation. Proof and validation require
-their explicit assurance transitions.
-
-[Relations and materialization](./relations-materialization.md) explains
-material and strict relation certificates. [Provenance types](./provenance-types.md)
-explains `Generated`, `Evidence`, and `Computed` values.
+See [provenance](./provenance-types.md), [reasoning](./reasoning-types.md), and
+[relations](./relations-materialization.md) for the independent contracts.

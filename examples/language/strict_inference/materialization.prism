@@ -19,10 +19,26 @@ def select_approved_version(
 def carry_approval_proof(
     source: DeductionInput[Proof[SameVersion(deployed, approved)]],
     target: Nat,
-) -> Proof[SameVersion(deployed, approved)]:
-    return source.context
+) -> Result[Proof[SameVersion(target, approved)], ProofError]:
+    term = try elaborate_proof[SameVersion(target, approved)]("rfl")
+    return kernel.check(term)
 
 release_approval = ReleaseApproval(
     version = select_approved_version,
+    version_by = carry_approval_proof,
+)
+
+# The same abstract plan also admits an actual deterministic computation.
+def normalize_version(version: Nat) -> Nat:
+    return version + 0
+
+def compute_approved_version(
+    source: DeductionInput[Proof[SameVersion(deployed, approved)]],
+) -> Nat:
+    computed = compute(approved, procedure = normalize_version)
+    return computed.value
+
+computed_release_approval = ReleaseApproval(
+    version = compute_approved_version,
     version_by = carry_approval_proof,
 )

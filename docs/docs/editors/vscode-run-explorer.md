@@ -89,17 +89,16 @@ The **Reasoning Log** appears in the Report view for a run that executed a
 materialized `reasoning` declaration. The Report builds the log from the typed
 execution trace. Hidden chain-of-thought text never enters the log.
 
-Each row represents a reasoning occurrence and shows the following fields.
+Each row represents a high-level node or relation, including fixed structural
+calls. It shows source/method identity, classification and execution family,
+normalized requirements, and the distinct runtime instance. Expand the row for
+actual producers and upstream activities, assurance and claim disposition,
+policy/validator/proof references, assumptions, and the returned value.
 
-- Its stable occurrence name.
-- Its order in the executed topology.
-- Its declared output type.
-- Its status.
-- The result recorded for that step.
-
-The underlying trace also records the abstract reasoning type, concrete
-implementation, reasoning declaration, effects, failure type, and logical input
-type. Expand the full `trace` field in Run Explorer when you need those details.
+Execution completion and contract satisfaction appear separately. Unchecked,
+unclassified, and not-applicable states are explicit. Repeated source steps
+remain distinct runtime instances. Unsupported persisted trace versions produce
+a visible error and must be regenerated.
 
 Follow these steps to produce a useful log.
 
@@ -110,8 +109,7 @@ Follow these steps to produce a useful log.
 3. Open the Prism activity bar, then expand **Report**.
 4. Expand a step under **Reasoning Log** to inspect its result.
 
-The report only shows this section when the runtime trace contains materialized
-reasoning occurrences. The quick start uses an ordinary function. Its report
+The report only shows this section when the runtime trace contains high-level workflow nodes or relations. The quick start uses an ordinary function. Its report
 contains a result without a Reasoning Log section.
 
 ## Run history and diagnostics

@@ -27,6 +27,7 @@ from prism.runtime import (
     FileArtifactStore,
     run,
 )
+from prism.runtime.results import require_supported_trace
 from prism.sdk.runtime import LocalResourceResolver, load_workspace_knowledge
 from prism.sdk.workspace import resolve_project_root
 from prism.tooling.lsp.service import PrismLanguageService
@@ -143,6 +144,17 @@ class PrismWorkbenchService:
             except (OSError, ValueError):
                 continue
             if result.document_path == target:
+                if result.output is not None:
+                    try:
+                        require_supported_trace(result.output)
+                    except ValueError as exc:
+                        result = result.model_copy(
+                            update={
+                                "status": "failed",
+                                "message": str(exc),
+                                "output": None,
+                            }
+                        )
                 artifact_path = path.with_suffix(".artifacts")
                 if artifact_path.is_dir():
                     result = self._resolve_effect_artifacts(

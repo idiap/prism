@@ -9,6 +9,9 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
+echo "Checking architecture contracts"
+uv run lint-imports
+
 echo "Running pytest"
 uv run pytest
 

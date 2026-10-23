@@ -54,7 +54,9 @@ class ValidatedValue:
     value: Any
     validator: str
     specification: str
-    requirements: tuple[bool, ...]
+    result: bool
+    validator_hash: str
+    claim: Any = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,3 +118,33 @@ class RefinementFailureValue:
     error: Any
     last_candidate_digest: str
     last_feedback_digest: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProductionActivity:
+    identity: str
+    kind: str
+    operation: str
+    inputs: tuple[str, ...]
+    implementation_hash: str | None = None
+    effect_record: str | None = None
+    source: str | None = None
+    source_hash: str | None = None
+    synthetic: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ValueReference:
+    identity: str
+    activity: str
+    children: tuple[tuple[str, str], ...] = ()
+    artifact: str | None = None
+    dependencies: tuple[str, ...] = ()
+    entries: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ProvenanceGraph:
+    activities: tuple[ProductionActivity, ...]
+    values: tuple[ValueReference, ...]
+    result: str | None

@@ -32,9 +32,9 @@ def advance_state(
         fuel = state.fuel - duration * burn.throttle * mission.fuel_burn_rate,
     )
 
-def simulate_trajectory(
+def integrate_trajectory(
     plan: types.PlanHypothesis,
-) -> Computed[types.TrajectoryBounds]:
+) -> types.TrajectoryBounds:
     mission = plan.mission
     initial = types.LanderState(
         x = mission.initial_x,
@@ -58,12 +58,18 @@ def simulate_trajectory(
         terminal_entry_vy_upper_bound = before_terminal.vy,
         peak_thrust_upper_bound = mission.max_thrust,
     )
-    return compute(trajectory, procedure = "lunar-trajectory-integrator-v1")
+    return trajectory
 
-def check_constraints(
+def simulate_trajectory(
+    plan: types.PlanHypothesis,
+) -> Computed[types.TrajectoryBounds]:
+    return compute(plan, procedure = integrate_trajectory)
+
+
+def evaluate_constraints(
     trajectory: Computed[types.TrajectoryBounds],
     mission: types.MissionConstraints,
-) -> Computed[types.ConstraintChecks]:
+) -> types.ConstraintChecks:
     bounds = trajectory.value
     checks = types.ConstraintChecks(
         inside_landing_zone = (
@@ -89,7 +95,14 @@ def check_constraints(
         engine_limit_safe = bounds.peak_thrust_upper_bound <= mission.max_thrust,
         fuel_nonnegative = bounds.fuel_remaining >= 0.0,
     )
-    return compute(checks, procedure = "lunar-constraint-checker-v1")
+    return checks
+
+def check_constraints(
+    trajectory: Computed[types.TrajectoryBounds],
+    mission: types.MissionConstraints,
+) -> Computed[types.ConstraintChecks]:
+    return compute(trajectory, mission, procedure = evaluate_constraints)
+
 
 def build_landing_assessment(
     plan: types.AcceptedPlan,
@@ -206,6 +219,26 @@ def check_trajectory(
         checks,
     )
 
+def safe_under_model(computed: Computed[types.PlanHypothesis]) -> Bool:
+    plan = computed.value
+    trajectory = simulate_trajectory(plan)
+    checks = check_constraints(trajectory, plan.mission).value
+    return (
+        checks.inside_landing_zone
+        and checks.horizontal_speed_safe
+        and checks.vertical_speed_safe
+        and checks.touchdown_altitude_safe
+        and checks.attitude_safe
+        and checks.fuel_reserve_safe
+        and checks.terrain_clearance_safe
+        and checks.engine_limit_safe
+        and checks.fuel_nonnegative
+    )
+
+safe_plan_validator = validator[
+    value: Computed[types.PlanHypothesis], types.SafeUnderModel(value)
+](safe_under_model)
+
 def validate_safe_plan(
     source: DeductionInput[types.LandingAssessment],
 ) -> Result[
@@ -220,6 +253,5 @@ def validate_safe_plan(
         types.SafeUnderModel(computed)
     ](
         computed,
-        validator = "lunar-lander-simulator-v1",
-        require = [source.context.accepted],
+        validator = safe_plan_validator,
     )

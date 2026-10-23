@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from prism.language.core import CoreType
+from prism.language.core import CoreType, RecordContract
+from prism.language.core.declarations import ReasoningInvocationContract
 from prism.language.kernel import CheckedModule, Term
 
 
@@ -29,6 +30,7 @@ class Literal:
 @dataclass(frozen=True, slots=True)
 class Reference:
     name: str
+    global_binding: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +66,7 @@ class CallExpression:
     arguments: tuple[CallArgument, ...]
     result_type: CoreType | None = None
     expected_term: Term | None = None
+    proof_bindings: tuple[tuple[str, Any, CoreType], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,7 @@ class Try:
 class ReasoningInvocation:
     callee: Any
     arguments: tuple[CallArgument, ...]
+    contract: ReasoningInvocationContract | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +139,9 @@ class Return:
 class RecordDefinition:
     name: str
     fields: tuple[tuple[str, CoreType], ...]
+    field_bindings: tuple[str | None, ...] = ()
+    type_parameters: tuple[str, ...] = ()
+    identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +152,8 @@ class FunctionDefinition:
     effects: tuple[str, ...]
     body: tuple[Any, ...]
     kind: str = "def"
+    identity: str | None = None
+    type_parameters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,5 +165,7 @@ class ExecutableProgram:
     module_hashes: Mapping[str, str] = field(default_factory=dict)
     aliases: Mapping[str, CoreType] = field(default_factory=dict)
     variants: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    ir_version: str = "10"
+    ir_version: str = "11"
     checked_module: CheckedModule | None = None
+    binding_identities: Mapping[str, str] = field(default_factory=dict)
+    record_contracts: Mapping[str, RecordContract] = field(default_factory=dict)

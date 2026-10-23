@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-License-Identifier: MIT
+
+from prism.reporting.report import Report
+from content import create_report
+
+def main() -> Report:
+    return create_report(True)

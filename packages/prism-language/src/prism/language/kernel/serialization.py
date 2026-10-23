@@ -102,37 +102,13 @@ def term_from_data(data: Any) -> Term:
         raise KernelError("malformed core term", code="kernel-serialization-term")
     tag = data[0]
     try:
-        if tag == "sort" and len(data) == 2:
-            return Sort(None if data[1] is None else level_from_data(data[1]))
-        if tag == "local" and len(data) == 2 and isinstance(data[1], int):
-            return Local(data[1])
-        if tag == "const" and len(data) == 3:
-            return Const(str(data[1]), tuple(level_from_data(item) for item in data[2]))
-        if tag == "pi" and len(data) == 4:
-            return Pi(str(data[1]), term_from_data(data[2]), term_from_data(data[3]))
-        if tag == "lam" and len(data) == 4:
-            return Lam(str(data[1]), term_from_data(data[2]), term_from_data(data[3]))
-        if tag == "app" and len(data) == 3:
-            return App(term_from_data(data[1]), term_from_data(data[2]))
-        if tag == "let" and len(data) == 5:
-            return Let(
-                str(data[1]),
-                term_from_data(data[2]),
-                term_from_data(data[3]),
-                term_from_data(data[4]),
-            )
-        if tag in {"inductive", "constructor", "recursor"} and len(data) == 3:
-            arguments = tuple(term_from_data(item) for item in data[2])
-            cls = {
-                "inductive": InductiveRef,
-                "constructor": ConstructorRef,
-                "recursor": RecursorRef,
-            }[tag]
-            return cls(str(data[1]), arguments)
+        result = _decode_term_tag(data, tag)
     except (TypeError, ValueError, KeyError) as exc:
         raise KernelError(
             "malformed core term", code="kernel-serialization-term"
         ) from exc
+    if result is not None:
+        return result
     raise KernelError(
         f"unknown or malformed core term tag `{tag}`",
         code="kernel-serialization-term",
@@ -314,3 +290,34 @@ def deserialize_module(
     if data.get("hash") != checked.content_hash:
         raise KernelError("core module hash mismatch", code="kernel-module-hash")
     return checked
+
+
+def _decode_term_tag(data: list[Any], tag: str) -> Term | None:
+    if tag == "sort" and len(data) == 2:
+        return Sort(None if data[1] is None else level_from_data(data[1]))
+    if tag == "local" and len(data) == 2 and isinstance(data[1], int):
+        return Local(data[1])
+    if tag == "const" and len(data) == 3:
+        return Const(str(data[1]), tuple(level_from_data(item) for item in data[2]))
+    if tag == "pi" and len(data) == 4:
+        return Pi(str(data[1]), term_from_data(data[2]), term_from_data(data[3]))
+    if tag == "lam" and len(data) == 4:
+        return Lam(str(data[1]), term_from_data(data[2]), term_from_data(data[3]))
+    if tag == "app" and len(data) == 3:
+        return App(term_from_data(data[1]), term_from_data(data[2]))
+    if tag == "let" and len(data) == 5:
+        return Let(
+            str(data[1]),
+            term_from_data(data[2]),
+            term_from_data(data[3]),
+            term_from_data(data[4]),
+        )
+    if tag in {"inductive", "constructor", "recursor"} and len(data) == 3:
+        arguments = tuple(term_from_data(item) for item in data[2])
+        cls = {
+            "inductive": InductiveRef,
+            "constructor": ConstructorRef,
+            "recursor": RecursorRef,
+        }[tag]
+        return cls(str(data[1]), arguments)
+    return None

@@ -210,6 +210,15 @@ class TypeField:
 
 
 @dataclass(frozen=True, slots=True)
+class MethodMetadata:
+    taxonomy: str
+    version: str
+    facets: tuple[tuple[str, tuple[str, ...]], ...]
+    archetype_state: str
+    span: SourceSpan
+
+
+@dataclass(frozen=True, slots=True)
 class TypeDecl:
     name: str
     fields: tuple[TypeField, ...]
@@ -218,6 +227,7 @@ class TypeDecl:
     alternatives: tuple[str, ...] = ()
     alias: TypeExpr | None = None
     alternative_spans: tuple[SourceSpan, ...] = ()
+    metadata: MethodMetadata | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,11 +261,21 @@ class ToolDecl:
 
 
 @dataclass(frozen=True, slots=True)
+class OccurrenceConstraint:
+    subject: str
+    path: tuple[str, ...]
+    dimension: str
+    allowed: tuple[str, ...]
+    span: SourceSpan
+
+
+@dataclass(frozen=True, slots=True)
 class NodeOccurrence:
     component: Expression
     alias: str | None
     span: SourceSpan
     relation: str | None = None
+    constraints: tuple[OccurrenceConstraint, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

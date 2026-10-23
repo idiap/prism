@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from examples.language.release_review.reasoning import (
+    AssessRelease,
+    Decision,
+    DecisionInput,
+    Review,
+    ReviewTask,
+)
+from examples.language.release_review.release_review_skill import release_review_skill
+from prism.reasoning.methods.deductive import DeductionInput
+
+agent review_change(
+    task: ReviewTask,
+) -> Result[Generated[Review], ModelFailure]
+    ! {AI.Generate, Context.Disclose}:
+    skills: Skills[ReviewTask] = [release_review_skill]
+
+workflow produce_review(
+    task: ReviewTask,
+) -> Generated[Review]
+    fails ModelFailure
+    ! {AI.Generate, Context.Disclose}:
+    sequence:
+        [review: review_change(task)]
+    return review
+
+def apply_release_policy(
+    source: DeductionInput[DecisionInput],
+) -> Decision:
+    review = source.context.review.value
+    return Decision(
+        approved = (
+            review.tests_passed
+            and review.risk <= source.context.policy.maximum_risk
+        ),
+        rationale = review.summary,
+    )
+
+assess_release = AssessRelease(
+    review = produce_review,
+    decision = apply_release_policy,
+)

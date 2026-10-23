@@ -7,6 +7,7 @@ version = 1
 
 [[annotations]]
 path = [
+  ".codex/skills/todo-planner/agents/openai.yaml",
   ".python-version",
   ".vscode/*.json",
   "apps/*/.vscode/*.json",
@@ -14,8 +15,18 @@ path = [
   "apps/*/resources/*.svg",
   "apps/*/syntaxes/*.json",
   "examples/**/*.code-workspace",
+  "examples/language/release_review/release_review_skill.prism",
+  "examples/language/typed_report_run/README.md",
+  "examples/language/typed_report_run/main.prism",
+  "examples/language/typed_reports/README.md",
+  "examples/language/typed_reports/figure.svg",
+  "examples/language/typed_reports/runtime.json",
+  "libs/prism/reasoning/taxonomy.json",
   "prism.code-workspace",
+  "taxonomy/**",
   "tests/fixtures/**/*.txt",
+  "TODO-typed-reports.md",
+  "TYPED-REPORTS-HANDOFF.md",
   "uv.lock",
   "docs/package*.json",
   "docs/static/img/*.png",

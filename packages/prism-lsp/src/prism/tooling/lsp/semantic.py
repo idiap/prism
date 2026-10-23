@@ -47,147 +47,11 @@ _TokenType = Literal[
 
 
 def build_semantic_index(program: Program) -> list[PrismIdeSemanticToken]:
-    """Classify syntax from AST nodes so editor clients never parse Prism."""
-
-    locator = _TokenLocator(program.source)
-    result: list[PrismIdeSemanticToken] = []
-    seen: set[tuple[int, int, str]] = set()
-
-    def add(
-        name: str,
-        token_type: _TokenType,
-        within: SourceSpan,
-        *,
-        modifiers: tuple[str, ...] = (),
-        reverse: bool = False,
-    ) -> None:
-        span = locator.find(name, within, reverse=reverse)
-        if span is None:
-            return
-        key = (span.line, span.column, token_type)
-        if key in seen:
-            return
-        seen.add(key)
-        result.append(
-            PrismIdeSemanticToken(
-                span=_protocol_span(span),
-                token_type=token_type,
-                modifiers=list(modifiers),
-            )
-        )
-
-    def declaration(
-        value: Any,
-        keyword: str,
-        name_type: _TokenType,
-        *,
-        owner: str | None = None,
-    ) -> None:
-        add(keyword, "keyword", value.span)
-        add(value.name, name_type, value.span, modifiers=("declaration",))
-        for parameter in getattr(value, "parameters", ()):
-            add(
-                parameter.name,
-                "parameter",
-                parameter.span,
-                modifiers=("declaration",),
-            )
-        for type_parameter in getattr(value, "type_parameters", ()):
-            add(type_parameter, "type", value.span, modifiers=("declaration",))
-
-    def visit(value: Any, owner: str | None = None) -> None:
-        if isinstance(value, TypeDecl):
-            declaration(value, "type", "type")
-            for field in value.fields:
-                add(field.name, "property", field.span, modifiers=("declaration",))
-            return
-        if isinstance(value, FunctionDecl):
-            declaration(value, "def", "function")
-        elif isinstance(value, AgentDecl):
-            declaration(value, "agent", "type")
-        elif isinstance(value, WorkflowDecl):
-            declaration(value, "workflow", "function")
-        elif isinstance(value, ReasoningDecl):
-            declaration(value, "reasoning", "function")
-        elif isinstance(value, RelationDecl):
-            declaration(value, "relation", "function")
-        elif isinstance(value, TheoremDecl):
-            declaration(value, "theorem", "function")
-        elif isinstance(value, ImportDecl):
-            add("from", "keyword", value.span)
-            add("import", "keyword", value.span)
-        elif isinstance(value, ModuleImportDecl):
-            add("import", "keyword", value.span)
-        elif isinstance(value, Binding):
-            add(value.name, "variable", value.span, modifiers=("declaration",))
-        elif isinstance(value, NodeOccurrence):
-            if value.alias:
-                add(value.alias, "label", value.span, modifiers=("declaration",))
-            if value.relation:
-                add("by", "keyword", value.span, reverse=True)
-                add(
-                    value.relation.rsplit(".", 1)[-1],
-                    "function",
-                    value.span,
-                    reverse=True,
-                )
-        elif isinstance(value, (SequenceComposition, ParallelComposition)):
-            add(
-                "sequence" if isinstance(value, SequenceComposition) else "parallel",
-                "keyword",
-                value.span,
-            )
-            if value.relation:
-                add("by", "keyword", value.span, reverse=True)
-                add(
-                    value.relation.rsplit(".", 1)[-1],
-                    "function",
-                    value.span,
-                    reverse=True,
-                )
-        elif isinstance(value, ChoiceComposition):
-            add("choice", "keyword", value.span)
-            if value.relation:
-                add("by", "keyword", value.span, reverse=True)
-                add(
-                    value.relation.rsplit(".", 1)[-1],
-                    "function",
-                    value.span,
-                    reverse=True,
-                )
-        elif isinstance(value, RepeatComposition):
-            add("repeat", "keyword", value.span)
-            if value.relation:
-                add("by", "keyword", value.span, reverse=True)
-                add(
-                    value.relation.rsplit(".", 1)[-1],
-                    "function",
-                    value.span,
-                    reverse=True,
-                )
-        elif isinstance(value, GuardedExit):
-            add("on", "keyword", value.span)
-            add(value.occurrence, "label", value.span)
-            add(value.selector, "property", value.span)
-            add(value.action, "keyword", value.span)
-            if value.target:
-                add(
-                    value.target.rsplit(".", 1)[-1],
-                    "function",
-                    value.span,
-                    reverse=True,
-                )
-
-        if dataclasses.is_dataclass(value):
-            for field in dataclasses.fields(value):
-                if field.name != "span":
-                    visit(getattr(value, field.name), getattr(value, "name", owner))
-        elif isinstance(value, (tuple, list)):
-            for item in value:
-                visit(item, owner)
-
-    visit(program.declarations)
-    return sorted(result, key=lambda item: (item.span.line, item.span.character))
+    collector = _SemanticCollector(program)
+    collector.visit(program.declarations)
+    return sorted(
+        collector.result, key=lambda item: (item.span.line, item.span.character)
+    )
 
 
 class _TokenLocator:
@@ -230,3 +94,188 @@ def _protocol_span(span: SourceSpan) -> PrismIdeSymbolSpan:
         end_line=(span.end_line - 1) if span.end_line else span.line - 1,
         end_character=(span.end_column - 1) if span.end_column else span.column,
     )
+
+
+class _SemanticCollector:
+    def __init__(self, program: Program) -> None:
+        self.locator = _TokenLocator(program.source)
+        self.result: list[PrismIdeSemanticToken] = []
+        self.seen: set[tuple[int, int, str]] = set()
+
+    def add(
+        self,
+        name: str,
+        token_type: _TokenType,
+        within: SourceSpan,
+        *,
+        modifiers: tuple[str, ...] = (),
+        reverse: bool = False,
+    ) -> None:
+        span = self.locator.find(name, within, reverse=reverse)
+        if span is None:
+            return
+        key = (span.line, span.column, token_type)
+        if key in self.seen:
+            return
+        self.seen.add(key)
+        self.result.append(
+            PrismIdeSemanticToken(
+                span=_protocol_span(span),
+                token_type=token_type,
+                modifiers=list(modifiers),
+            )
+        )
+
+    def declaration(
+        self,
+        value: Any,
+        keyword: str,
+        name_type: _TokenType,
+        *,
+        owner: str | None = None,
+    ) -> None:
+        self.add(keyword, "keyword", value.span)
+        self.add(value.name, name_type, value.span, modifiers=("declaration",))
+        for parameter in getattr(value, "parameters", ()):
+            self.add(
+                parameter.name,
+                "parameter",
+                parameter.span,
+                modifiers=("declaration",),
+            )
+        for type_parameter in getattr(value, "type_parameters", ()):
+            self.add(type_parameter, "type", value.span, modifiers=("declaration",))
+
+    def visit(self, value: Any, owner: str | None = None) -> None:
+        if isinstance(value, TypeDecl):
+            self._classify_type(value)
+            return
+        self._classify(value)
+
+        if dataclasses.is_dataclass(value):
+            for field in dataclasses.fields(value):
+                if field.name != "span":
+                    self.visit(
+                        getattr(value, field.name), getattr(value, "name", owner)
+                    )
+        elif isinstance(value, (tuple, list)):
+            for item in value:
+                self.visit(item, owner)
+
+    def _classify_type(self, value) -> None:
+        self.declaration(value, "type", "type")
+        if value.metadata is not None:
+            self.add("with", "keyword", value.span)
+            self.add("taxonomy", "property", value.metadata.span)
+            for facet, _ in value.metadata.facets:
+                self.add(facet, "property", value.metadata.span)
+        for field in value.fields:
+            self.add(field.name, "property", field.span, modifiers=("declaration",))
+
+    def _classify(self, value: Any) -> None:
+        declarations: tuple[tuple[type, str, _TokenType], ...] = (
+            (FunctionDecl, "def", "function"),
+            (AgentDecl, "agent", "type"),
+            (WorkflowDecl, "workflow", "function"),
+            (ReasoningDecl, "reasoning", "function"),
+            (RelationDecl, "relation", "function"),
+            (TheoremDecl, "theorem", "function"),
+        )
+        for node_type, keyword, name_type in declarations:
+            if isinstance(value, node_type):
+                self.declaration(value, keyword, name_type)
+                return
+        classifiers = (
+            (ImportDecl, self._classify_import_decl),
+            (ModuleImportDecl, self._classify_module_import_decl),
+            (Binding, self._classify_binding),
+            (NodeOccurrence, self._classify_node_occurrence),
+            (
+                (SequenceComposition, ParallelComposition),
+                self._classify_sequence_composition,
+            ),
+            (ChoiceComposition, self._classify_choice_composition),
+            (RepeatComposition, self._classify_repeat_composition),
+            (GuardedExit, self._classify_guarded_exit),
+        )
+        for node_type, classify in classifiers:
+            if isinstance(value, node_type):
+                classify(value)
+                return
+
+    def _classify_import_decl(self, value) -> None:
+        self.add("from", "keyword", value.span)
+        self.add("import", "keyword", value.span)
+
+    def _classify_module_import_decl(self, value) -> None:
+        self.add("import", "keyword", value.span)
+
+    def _classify_binding(self, value) -> None:
+        self.add(value.name, "variable", value.span, modifiers=("declaration",))
+
+    def _classify_node_occurrence(self, value) -> None:
+        if value.constraints:
+            self.add("with", "keyword", value.span)
+            for constraint in value.constraints:
+                self.add(constraint.subject, "property", constraint.span)
+                self.add(constraint.dimension, "property", constraint.span)
+        if value.alias:
+            self.add(value.alias, "label", value.span, modifiers=("declaration",))
+        if value.relation:
+            self.add("by", "keyword", value.span, reverse=True)
+            self.add(
+                value.relation.rsplit(".", 1)[-1],
+                "function",
+                value.span,
+                reverse=True,
+            )
+
+    def _classify_sequence_composition(self, value) -> None:
+        self.add(
+            "sequence" if isinstance(value, SequenceComposition) else "parallel",
+            "keyword",
+            value.span,
+        )
+        if value.relation:
+            self.add("by", "keyword", value.span, reverse=True)
+            self.add(
+                value.relation.rsplit(".", 1)[-1],
+                "function",
+                value.span,
+                reverse=True,
+            )
+
+    def _classify_choice_composition(self, value) -> None:
+        self.add("choice", "keyword", value.span)
+        if value.relation:
+            self.add("by", "keyword", value.span, reverse=True)
+            self.add(
+                value.relation.rsplit(".", 1)[-1],
+                "function",
+                value.span,
+                reverse=True,
+            )
+
+    def _classify_repeat_composition(self, value) -> None:
+        self.add("repeat", "keyword", value.span)
+        if value.relation:
+            self.add("by", "keyword", value.span, reverse=True)
+            self.add(
+                value.relation.rsplit(".", 1)[-1],
+                "function",
+                value.span,
+                reverse=True,
+            )
+
+    def _classify_guarded_exit(self, value) -> None:
+        self.add("on", "keyword", value.span)
+        self.add(value.occurrence, "label", value.span)
+        self.add(value.selector, "property", value.span)
+        self.add(value.action, "keyword", value.span)
+        if value.target:
+            self.add(
+                value.target.rsplit(".", 1)[-1],
+                "function",
+                value.span,
+                reverse=True,
+            )

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Iterable, TypeAlias
 
 from .levels import ZERO, Level, level_variables, substitute_level
@@ -180,44 +181,42 @@ def instantiate_universes(
         raise ValueError("universe parameter and argument counts differ")
     substitutions = dict(zip(parameters, arguments, strict=True))
 
-    def visit(value: Term) -> Term:
-        if isinstance(value, Sort):
-            return Sort(
-                None
-                if value.level is None
-                else substitute_level(value.level, substitutions)
-            )
-        if isinstance(value, Local):
-            return value
-        if isinstance(value, Const):
-            return Const(
-                value.name,
-                tuple(
-                    substitute_level(argument, substitutions)
-                    for argument in value.universe_arguments
-                ),
-            )
-        if isinstance(value, Pi):
-            return Pi(value.name, visit(value.domain), visit(value.codomain))
-        if isinstance(value, Lam):
-            return Lam(value.name, visit(value.domain), visit(value.body))
-        if isinstance(value, App):
-            return App(visit(value.function), visit(value.argument))
-        if isinstance(value, Let):
-            return Let(
-                value.name,
-                visit(value.type),
-                visit(value.value),
-                visit(value.body),
-            )
-        arguments_ = tuple(visit(argument) for argument in value.arguments)
-        if isinstance(value, InductiveRef):
-            return InductiveRef(value.name, arguments_)
-        if isinstance(value, ConstructorRef):
-            return ConstructorRef(value.name, arguments_)
-        return RecursorRef(value.name, arguments_)
+    return _instantiate_universe_term(term, substitutions)
 
-    return visit(term)
+
+def _instantiate_universe_term(value: Term, substitutions) -> Term:
+    visit = partial(_instantiate_universe_term, substitutions=substitutions)
+    if isinstance(value, Sort):
+        return Sort(
+            None
+            if value.level is None
+            else substitute_level(value.level, substitutions)
+        )
+    if isinstance(value, Local):
+        return value
+    if isinstance(value, Const):
+        return Const(
+            value.name,
+            tuple(
+                substitute_level(argument, substitutions)
+                for argument in value.universe_arguments
+            ),
+        )
+    if isinstance(value, Pi):
+        return Pi(value.name, visit(value.domain), visit(value.codomain))
+    if isinstance(value, Lam):
+        return Lam(value.name, visit(value.domain), visit(value.body))
+    if isinstance(value, App):
+        return App(visit(value.function), visit(value.argument))
+    if isinstance(value, Let):
+        return Let(
+            value.name,
+            visit(value.type),
+            visit(value.value),
+            visit(value.body),
+        )
+    arguments_ = tuple(visit(argument) for argument in value.arguments)
+    return type(value)(value.name, arguments_)
 
 
 def pretty(term: Term, names: Iterable[str] = ()) -> str:

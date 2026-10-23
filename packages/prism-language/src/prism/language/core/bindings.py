@@ -18,6 +18,7 @@ class Binding:
     name: str
     type: CoreType
     value: Any = None
+    identity: str | None = None
 
 
 class BindingError(ValueError):

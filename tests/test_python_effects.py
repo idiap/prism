@@ -67,6 +67,14 @@ def test_python_call_executes_registered_callable() -> None:
     effect = next(event for event in output.trace if event.kind == "effect")
     assert effect.name == "calculator.add"
     assert effect.metadata["effects"] == ("Python.Call",)
+    assert output.provenance is not None
+    activity = next(
+        item
+        for item in output.provenance.activities
+        if item.operation == "calculator.add"
+    )
+    assert activity.kind == "external_unknown"
+    assert activity.effect_record == effect.metadata["record"]
 
 
 def test_python_exception_becomes_typed_failure() -> None:

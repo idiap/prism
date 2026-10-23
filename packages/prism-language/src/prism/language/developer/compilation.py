@@ -11,30 +11,14 @@ import hashlib
 from typing import Any
 
 from prism.language.core import CallableContract, CoreType, TypedModule
-from prism.language.effects import Binary as IRBinary
-from prism.language.effects import CallArgument as IRCallArgument
-from prism.language.effects import CallExpression as IRCallExpression
-from prism.language.effects import Conditional as IRConditional
 from prism.language.effects import (
     ExecutableProgram,
     FunctionDefinition,
     RecordDefinition,
     ValueBinding,
 )
-from prism.language.effects import Execute as IRExecute
-from prism.language.effects import Field as IRField
-from prism.language.effects import Index as IRIndex
-from prism.language.effects import ListValue as IRListValue
-from prism.language.effects import Literal as IRLiteral
-from prism.language.effects import MapValue as IRMapValue
-from prism.language.effects import ReasoningInvocation as IRReasoningInvocation
 from prism.language.effects import Reference as IRReference
 from prism.language.effects import Return as IRReturn
-from prism.language.effects import Solve as IRSolve
-from prism.language.effects import Try as IRTry
-from prism.language.effects import TupleValue as IRTupleValue
-from prism.language.effects import Unary as IRUnary
-from prism.language.evidence import MaterialInference as IRMaterialInference
 from prism.language.workflows import Agent as IRAgent
 from prism.language.workflows import Choice as IRChoice
 from prism.language.workflows import ChoiceArm as IRChoiceArm
@@ -50,28 +34,20 @@ from prism.language.workflows import WorkflowDefinition as IRWorkflowDefinition
 
 from .checking.helpers import (
     _expand_aliases,
-    _expression_name,
     _expression_references,
+)
+from .expression_lowering import _lower_expression as _lower_expression
+from .expression_lowering import (
+    _lower_reasoning_invocation as _lower_reasoning_invocation,
 )
 from .syntax.ast import (
     AgentDecl,
-    BinaryExpr,
     Binding,
     CallExpr,
     ChoiceComposition,
-    ConditionalExpr,
     Exact,
-    ExecuteExpr,
-    Expression,
     ExpressionStatement,
-    FieldExpr,
     FunctionDecl,
-    IndexExpr,
-    ListExpr,
-    LiteralExpr,
-    MapExpr,
-    MaterialInferenceExpr,
-    NameExpr,
     NodeOccurrence,
     ParallelComposition,
     ReasoningDecl,
@@ -79,12 +55,8 @@ from .syntax.ast import (
     RepeatComposition,
     Return,
     SequenceComposition,
-    SolveExpr,
     TheoremDecl,
     ToolDecl,
-    TryExpr,
-    TupleExpr,
-    UnaryExpr,
     WorkflowDecl,
 )
 
@@ -96,41 +68,14 @@ def compile(module: TypedModule) -> ExecutableProgram:
     for name, record in module.record_contracts.items():
         definitions.append(
             RecordDefinition(
-                name, tuple((field.name, field.type) for field in record.fields)
-            )
-        )
-    local_binding_ids = {
-        id(item) for item in module.declarations if isinstance(item, Binding)
-    }
-    for name, binding in module.globals.items():
-        declaration = binding.value
-        if not isinstance(declaration, Binding) or id(declaration) in local_binding_ids:
-            continue
-        definitions.append(
-            _lower_binding(
-                declaration,
-                module,
-                namespace=name.rpartition(".")[0] or None,
-            )
-        )
-    local_tool_ids = {
-        id(item) for item in module.declarations if isinstance(item, ToolDecl)
-    }
-    for name, binding in module.globals.items():
-        declaration = binding.value
-        if not isinstance(declaration, ToolDecl) or id(declaration) in local_tool_ids:
-            continue
-        definitions.append(
-            IRTool(
                 name,
-                binding.type.arguments[0],
-                _lower_expression(
-                    declaration.callable,
-                    module,
-                    namespace=name.rpartition(".")[0] or None,
-                ),
+                tuple((field.name, field.type) for field in record.fields),
+                tuple(field.identity for field in record.fields),
+                record.type_parameters,
+                record.identity,
             )
         )
+    definitions.extend(_lower_imported_values(module))
     for name, contract in module.callable_contracts.items():
         binding = module.globals.get(name)
         declaration = binding.value if binding else None
@@ -168,8 +113,14 @@ def compile(module: TypedModule) -> ExecutableProgram:
         entry_callable=entry,
         module_hashes=module.module_hashes,
         aliases=module.aliases,
+        record_contracts=module.record_contracts,
         variants=module.variants,
         checked_module=module.checked_module,
+        binding_identities={
+            name: binding.identity
+            for name, binding in module.globals.items()
+            if binding.identity is not None
+        },
     )
 
 
@@ -214,6 +165,8 @@ def _lower_callable(
             contract.result,
             contract.type_parameters,
             module.callable_origins.get(name),
+            tuple(parameter.identity for parameter in contract.parameters),
+            module.globals[name].identity,
         )
     if isinstance(declaration, WorkflowDecl):
         return IRWorkflowDefinition(
@@ -253,6 +206,8 @@ def _lower_callable(
         contract.effects,
         body,
         "proposition" if declaration.is_proposition_declaration else "def",
+        module.globals[name].identity,
+        contract.type_parameters,
     )
 
 
@@ -282,6 +237,8 @@ def _lower_reasoning(
             for item in declaration.exits
         ),
         declaration.result_alias,
+        module.globals[name].identity,
+        contract.type_parameters,
     )
 
 
@@ -292,7 +249,9 @@ def _lower_composition(
     namespace: str | None = None,
 ) -> Any:
     if isinstance(composition, NodeOccurrence):
-        relation_type = module.expression_types.get(id(composition))
+        fixed = (
+            module.occurrence_contracts[id(composition)].execution_kind == "structural"
+        )
         method_type = (
             module.expression_types.get(id(composition.component.callee))
             if isinstance(composition.component, CallExpr)
@@ -307,6 +266,7 @@ def _lower_composition(
         return IRNodeOccurrence(
             _lower_expression(composition.component, module, namespace=namespace),
             composition.alias,
+            module.occurrence_contracts[id(composition)],
             composition.relation,
             tuple(
                 ref
@@ -324,7 +284,8 @@ def _lower_composition(
             ),
             (
                 IRReference(f"{composition.alias}_input")
-                if composition.alias
+                if not fixed
+                and composition.alias
                 and logical_input is not None
                 and method_type is not None
                 and method_type.parameters
@@ -340,24 +301,10 @@ def _lower_composition(
                 )
                 else None
             ),
-            (method_type),
+            None if fixed else method_type,
             (
                 module.expression_types.get(id(logical_input))
                 if logical_input is not None
-                else None
-            ),
-            (
-                method_type.parameters[0][1]
-                if method_type is not None and method_type.parameters
-                else None
-            ),
-            module.expression_types.get(id(composition.component)),
-            relation_type,
-            (
-                relation_type.arguments[3]
-                if relation_type is not None
-                and relation_type.name == "Relation"
-                and len(relation_type.arguments) == 4
                 else None
             ),
         )
@@ -437,146 +384,38 @@ def _lower_binding(
     )
 
 
-def _lower_expression(
-    expression: Expression,
-    module: TypedModule,
-    *,
-    namespace: str | None = None,
-) -> Any:
-    if isinstance(expression, LiteralExpr):
-        return IRLiteral(expression.value)
-    if isinstance(expression, NameExpr):
-        qualified = (
-            f"{namespace}.{expression.name}"
-            if namespace and "." not in expression.name
-            else None
-        )
-        if qualified and (
-            qualified in module.callable_contracts
-            or qualified in module.record_contracts
-            or (
-                qualified in module.globals
-                and isinstance(module.globals[qualified].value, AgentDecl | Binding)
-            )
-        ):
-            return IRReference(qualified)
-        return IRReference(expression.name)
-    if isinstance(expression, ListExpr):
-        return IRListValue(
-            tuple(
-                _lower_expression(item, module, namespace=namespace)
-                for item in expression.items
+def _lower_imported_values(module: TypedModule) -> list[Any]:
+    definitions: list[Any] = []
+    local_binding_ids = {
+        id(item) for item in module.declarations if isinstance(item, Binding)
+    }
+    for name, binding in module.globals.items():
+        declaration = binding.value
+        if not isinstance(declaration, Binding) or id(declaration) in local_binding_ids:
+            continue
+        definitions.append(
+            _lower_binding(
+                declaration,
+                module,
+                namespace=name.rpartition(".")[0] or None,
             )
         )
-    if isinstance(expression, TupleExpr):
-        return IRTupleValue(
-            tuple(
-                _lower_expression(item, module, namespace=namespace)
-                for item in expression.items
+    local_tool_ids = {
+        id(item) for item in module.declarations if isinstance(item, ToolDecl)
+    }
+    for name, binding in module.globals.items():
+        declaration = binding.value
+        if not isinstance(declaration, ToolDecl) or id(declaration) in local_tool_ids:
+            continue
+        definitions.append(
+            IRTool(
+                name,
+                binding.type.arguments[0],
+                _lower_expression(
+                    declaration.callable,
+                    module,
+                    namespace=name.rpartition(".")[0] or None,
+                ),
             )
         )
-    if isinstance(expression, MapExpr):
-        return IRMapValue(
-            tuple(
-                (
-                    _lower_expression(key, module, namespace=namespace),
-                    _lower_expression(value, module, namespace=namespace),
-                )
-                for key, value in expression.items
-            )
-        )
-    if isinstance(expression, FieldExpr):
-        qualified = _expression_name(expression)
-        if (
-            qualified in module.callable_contracts
-            or qualified in module.record_contracts
-            or (
-                qualified in module.globals
-                and isinstance(module.globals[qualified].value, AgentDecl | Binding)
-            )
-        ):
-            return IRReference(qualified)
-        return IRField(
-            _lower_expression(expression.value, module, namespace=namespace),
-            expression.field,
-        )
-    if isinstance(expression, CallExpr):
-        return IRCallExpression(
-            _lower_expression(expression.callee, module, namespace=namespace),
-            tuple(
-                IRCallArgument(
-                    _lower_expression(item.value, module, namespace=namespace),
-                    item.name,
-                )
-                for item in expression.arguments
-            ),
-            module.expression_types[id(expression)],
-            module.expression_terms.get(id(expression)),
-        )
-    if isinstance(expression, ConditionalExpr):
-        return IRConditional(
-            _lower_expression(expression.condition, module, namespace=namespace),
-            _lower_expression(expression.when_true, module, namespace=namespace),
-            _lower_expression(expression.when_false, module, namespace=namespace),
-        )
-    if isinstance(expression, IndexExpr):
-        return IRIndex(
-            _lower_expression(expression.value, module, namespace=namespace),
-            _lower_expression(expression.index, module, namespace=namespace),
-        )
-    if isinstance(expression, TryExpr):
-        return IRTry(_lower_expression(expression.value, module, namespace=namespace))
-    if isinstance(expression, SolveExpr):
-        return IRSolve(
-            _lower_reasoning_invocation(
-                expression.reasoning, module, namespace=namespace
-            ),
-            _lower_expression(expression.workflow, module, namespace=namespace),
-        )
-    if isinstance(expression, ExecuteExpr):
-        return IRExecute(
-            _lower_reasoning_invocation(
-                expression.reasoning, module, namespace=namespace
-            ),
-            _lower_expression(expression.workflow, module, namespace=namespace),
-        )
-    if isinstance(expression, MaterialInferenceExpr):
-        return IRMaterialInference(
-            _lower_expression(expression.evidence, module, namespace=namespace),
-            _expression_name(expression.policy),
-            _lower_expression(expression.proposition, module, namespace=namespace),
-        )
-    if isinstance(expression, UnaryExpr):
-        return IRUnary(
-            expression.operator,
-            _lower_expression(expression.operand, module, namespace=namespace),
-        )
-    if isinstance(expression, BinaryExpr):
-        return IRBinary(
-            _lower_expression(expression.left, module, namespace=namespace),
-            expression.operator,
-            _lower_expression(expression.right, module, namespace=namespace),
-        )
-    raise TypeError(f"cannot lower expression `{type(expression).__name__}`")
-
-
-def _lower_reasoning_invocation(
-    expression: Expression | None,
-    module: TypedModule,
-    *,
-    namespace: str | None,
-) -> IRReasoningInvocation | None:
-    if expression is None:
-        return None
-    if not isinstance(expression, CallExpr):
-        raise TypeError("checked reasoning invocation is not a call")
-    return IRReasoningInvocation(
-        _lower_expression(expression.callee, module, namespace=namespace),
-        tuple(
-            IRCallArgument(
-                _lower_expression(argument.value, module, namespace=namespace),
-                argument.name,
-            )
-            for argument in expression.arguments
-        ),
-    )
+    return definitions

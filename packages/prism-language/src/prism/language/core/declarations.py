@@ -16,6 +16,7 @@ from .types import CoreType
 class Parameter:
     name: str
     type: CoreType
+    identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class CallableContract:
     kind: str = "def"
     type_parameters: tuple[str, ...] = ()
     failure: CoreType | None = None
+    structural_error: str | None = "not audited"
 
     @property
     def type(self) -> CoreType:
@@ -59,6 +61,9 @@ class CallableContract:
             parameters=tuple((item.name, item.type) for item in self.parameters),
             result=result,
             effects=effects,
+            parameter_bindings=tuple(
+                item.identity or item.name for item in self.parameters
+            ),
         )
 
 
@@ -67,3 +72,11 @@ class RecordContract:
     name: str
     fields: tuple[Parameter, ...]
     type_parameters: tuple[str, ...] = ()
+    identity: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReasoningInvocationContract:
+    identity: str
+    parameters: tuple[Parameter, ...]
+    specialization: tuple[CoreType, ...] = ()

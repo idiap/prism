@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: © 2026 Idiap Research Institute <contact@idiap.ch>
+# SPDX-FileContributor: Danilo Gusicuma <danilo.gusicuma@idiap.ch>
+#
+# SPDX-License-Identifier: MIT
+
+from prism.reasoning.methods.deductive import DeductionInput, Deductive
+from prism.reasoning.methods.evidential import Evidential, EvidentialInput
+
+type Change:
+    summary: String
+    diff: String
+
+type ReleasePolicy:
+    maximum_risk: Int
+
+type Review:
+    summary: String
+    risk: Int
+    tests_passed: Bool
+
+type Decision:
+    approved: Bool
+    rationale: String
+
+type DecisionInput:
+    review: Generated[Review]
+    policy: ReleasePolicy
+
+type ReviewTask = EvidentialInput[Change, ReleasePolicy]
+
+reasoning AssessRelease(task: ReviewTask) -> Decision:
+    sequence:
+        [review: Evidential[
+            Generated[Review],
+            Change,
+            ReleasePolicy,
+        ](task)]
+        [decision: Deductive[
+            Decision,
+            DecisionInput,
+        ](DeductionInput(context = DecisionInput(
+            review = review,
+            policy = task.criteria,
+        )))]
+    return decision

@@ -21,7 +21,19 @@ class ModuleSource:
     origin: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TaxonomySource:
+    identity: str
+    version: str
+    source: str
+    origin: str | None = None
+
+
 class ModuleLoader(Protocol):
+    def load_taxonomy(self, identity: str, version: str) -> TaxonomySource:
+        """Load pinned taxonomy data without imposing a filesystem layout."""
+        ...
+
     def load_module(self, name: str) -> ModuleSource:
         """Load source without imposing a filesystem layout."""
 
@@ -39,8 +51,20 @@ class LanguageModule:
 
 
 class InMemoryModuleLoader:
-    def __init__(self, modules: Mapping[str, str | ModuleSource]) -> None:
+    def __init__(
+        self,
+        modules: Mapping[str, str | ModuleSource],
+        *,
+        taxonomies: tuple[TaxonomySource, ...] = (),
+    ) -> None:
         self._modules = dict(modules)
+        self._taxonomies = {(item.identity, item.version): item for item in taxonomies}
+
+    def load_taxonomy(self, identity: str, version: str) -> TaxonomySource:
+        try:
+            return self._taxonomies[identity, version]
+        except KeyError as exc:
+            raise ValueError(f"unknown taxonomy `{identity}@{version}`") from exc
 
     def load_module(self, name: str) -> ModuleSource:
         try:

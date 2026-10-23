@@ -10,21 +10,51 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from prism.language.core import CoreType
+from prism.language.core.occurrences import OccurrenceContract
+
 
 @dataclass(frozen=True, slots=True)
 class NodeOccurrence:
     component: Any
     alias: str | None
+    contract: OccurrenceContract
     relation: str | None = None
     dependencies: tuple[str, ...] = ()
     logical_input: Any | None = None
     input_adapter: Any | None = None
     method_type: Any | None = None
     topology_input_type: Any | None = None
-    input_type: Any | None = None
-    output_type: Any | None = None
-    relation_type: Any | None = None
-    certificate_type: Any | None = None
+
+    @property
+    def input_type(self) -> CoreType:
+        return self.contract.input_type
+
+    @property
+    def output_type(self) -> CoreType:
+        return self.contract.output_type
+
+    @property
+    def certificate_type(self) -> CoreType | None:
+        return (
+            self.contract.relation.certificate_type if self.contract.relation else None
+        )
+
+    @property
+    def relation_type(self) -> CoreType | None:
+        relation = self.contract.relation
+        if relation is None:
+            return None
+        assert self.relation is not None
+        return CoreType(
+            "Relation",
+            (
+                CoreType(self.relation),
+                relation.source_type,
+                relation.target_type,
+                relation.certificate_type,
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +119,8 @@ class ReasoningDefinition:
     composition: Any
     exits: tuple[GuardedExit, ...]
     result_alias: str | None
+    identity: str | None = None
+    type_parameters: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +130,8 @@ class RelationDefinition:
     certificate_type: Any
     type_parameters: tuple[str, ...] = ()
     source_module: str | None = None
+    parameter_bindings: tuple[str | None, ...] = ()
+    identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

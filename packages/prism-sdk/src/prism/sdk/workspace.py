@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from prism.language.core import ModuleLoader, ModuleSource
+from prism.language.core import ModuleLoader, ModuleSource, TaxonomySource
 from prism.language.interop import ResourceReference
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class WorkspaceModuleLoader(ModuleLoader):
 
     def load_module(self, name: str) -> ModuleSource:
         relative = Path(*name.split("."))
-        if name.startswith("prism.reasoning."):
+        if name.startswith(("prism.reasoning.", "prism.reporting.")):
             relative = Path("libs", "prism", *name.split(".")[1:])
         for root in self._roots():
             for candidate in (
@@ -86,6 +86,24 @@ class WorkspaceModuleLoader(ModuleLoader):
             return packaged
         raise ValueError(f"unknown Prism module `{name}`")
 
+    def load_taxonomy(self, identity: str, version: str) -> TaxonomySource:
+        for root in self._roots():
+            for relative in (
+                "taxonomy/taxonomy.json",
+                "libs/prism/reasoning/taxonomy.json",
+            ):
+                candidate = root / relative
+                if not candidate.is_file():
+                    continue
+                source = candidate.read_text(encoding="utf-8")
+                data = json.loads(source)
+                if (data.get("taxonomy_id"), data.get("schema_version")) == (
+                    identity,
+                    version,
+                ):
+                    return TaxonomySource(identity, version, source, str(candidate))
+        raise ValueError(f"unknown taxonomy `{identity}@{version}`")
+
     def iter_workspace_modules(self) -> list[str]:
         modules: list[str] = []
         libs = self.project_root / "libs"
@@ -94,6 +112,7 @@ class WorkspaceModuleLoader(ModuleLoader):
         source_paths = (
             *libs.glob("*/functions/**/*.prism"),
             *libs.glob("*/reasoning/**/*.prism"),
+            *libs.glob("*/reporting/**/*.prism"),
             *libs.glob("*/tactics/**/*.prism"),
         )
         for path in sorted(source_paths):
@@ -103,7 +122,10 @@ class WorkspaceModuleLoader(ModuleLoader):
                 if path.name == "__init__.prism"
                 else rel.with_suffix("").parts
             )
-            if parts[:3] == ("libs", "prism", "reasoning"):
+            if parts[:2] == ("libs", "prism") and parts[2] in {
+                "reasoning",
+                "reporting",
+            }:
                 parts = parts[1:]
             modules.append(".".join(parts))
         return modules

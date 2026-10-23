@@ -14,143 +14,18 @@ from typing import Any, Callable, Literal
 import yaml
 from prism.platform.specs.aggregator_specs import ContradictionResolutionMode
 from prism.platform.specs.semantic_types import MergeStrategy
-from pydantic import BaseModel, ConfigDict, Field
 
-WorkflowCompositionKind = Literal[
-    "sequence",
-    "branch",
-    "loop",
-    "refinement",
-    "judge",
-    "delegation",
-    "aggregation",
-    "contradiction-resolution",
-]
-
-
-class WorkflowCompositionPolicySpec(BaseModel):
-    """Typed composition metadata attached to one rover workflow node.
-
-    The existing rover `sequence` block remains the canonical graph shape. This
-    policy layer explains *why* the node participates in that graph in a certain
-    way: branching, refinement, judging, delegation, evidence aggregation, or
-    contradiction handling.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: WorkflowCompositionKind
-    condition: str | None = None
-    branch_targets: list[str] = Field(default_factory=list)
-    max_iterations: int = 1
-    exit_when: str | None = None
-    iteration_input: str | None = None
-    delegate_to: list[str] = Field(default_factory=list)
-    aggregation_sources: list[str] = Field(default_factory=list)
-    aggregation_mode: MergeStrategy | Literal["arbitrate"] | None = None
-    contradiction_resolution: ContradictionResolutionMode | None = None
-    judge_role: str | None = None
-    notes: list[str] = Field(default_factory=list)
-
-
-class WorkflowDiagramNodeSpec(BaseModel):
-    """One node declared in a diagrammatic workflow file."""
-
-    model_config = ConfigDict(extra="allow")
-
-    label: str | None = None
-    agent: str | None = None
-    tool: str | None = None
-    inputs: dict[str, Any] = Field(default_factory=dict)
-    composition: WorkflowCompositionPolicySpec | None = None
-    notes: list[str] = Field(default_factory=list)
-
-
-class WorkflowDiagramExportSpec(BaseModel):
-    """One declared export in a workflow interface contract."""
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-    kind: str
-    from_expression: str = Field(alias="from")
-    label: str | None = None
-    notes: list[str] = Field(default_factory=list)
-
-
-class WorkflowDiagramInterfaceSpec(BaseModel):
-    """Declared interface contract for a workflow diagram."""
-
-    model_config = ConfigDict(extra="allow")
-
-    modes: list[str] = Field(default_factory=list)
-    inputs: dict[str, Any] = Field(default_factory=dict)
-    exports: dict[str, WorkflowDiagramExportSpec] = Field(default_factory=dict)
-
-
-class WorkflowDiagramSpec(BaseModel):
-    """A rover-style workflow diagram as used by PRISM."""
-
-    model_config = ConfigDict(extra="allow")
-
-    version: int | str = 1
-    name: str
-    entrypoint: str
-    sequence: str
-    nodes: dict[str, WorkflowDiagramNodeSpec] = Field(default_factory=dict)
-    interface: WorkflowDiagramInterfaceSpec | None = None
-
-
-class WorkflowDiagramNodeExecution(BaseModel):
-    """One executed node inside a workflow diagram run."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    node_id: str
-    node_kind: str
-    label: str
-    composition_kind: str | None = None
-    iteration_count: int = 1
-    skipped: bool = False
-    dependencies: list[str] = Field(default_factory=list)
-    resolved_inputs: dict[str, Any] = Field(default_factory=dict)
-    output: dict[str, Any] = Field(default_factory=dict)
-    notes: list[str] = Field(default_factory=list)
-
-
-class WorkflowDiagramRunResult(BaseModel):
-    """Result bundle from executing one diagrammatic workflow."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    diagram_path: str
-    entrypoint: str
-    terminal_node_ids: list[str] = Field(default_factory=list)
-    final_output: dict[str, Any] = Field(default_factory=dict)
-    node_results: list[WorkflowDiagramNodeExecution] = Field(default_factory=list)
-    exports: dict[str, "WorkflowDiagramResolvedExport"] = Field(default_factory=dict)
-
-
-class WorkflowDiagramResolvedExport(BaseModel):
-    """One resolved export surfaced from a workflow run."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    export_name: str
-    kind: str
-    source_expression: str
-    value: Any = None
-    label: str | None = None
-    notes: list[str] = Field(default_factory=list)
-
-
-class _NormalizedNodeResult(BaseModel):
-    """Internal normalized node result used by the workflow executor."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    output: dict[str, Any] = Field(default_factory=dict)
-    notes: list[str] = Field(default_factory=list)
+from .dependencies import dependencies
+from .models import WorkflowCompositionKind as WorkflowCompositionKind
+from .models import WorkflowCompositionPolicySpec as WorkflowCompositionPolicySpec
+from .models import WorkflowDiagramExportSpec as WorkflowDiagramExportSpec
+from .models import WorkflowDiagramInterfaceSpec as WorkflowDiagramInterfaceSpec
+from .models import WorkflowDiagramNodeExecution as WorkflowDiagramNodeExecution
+from .models import WorkflowDiagramNodeSpec as WorkflowDiagramNodeSpec
+from .models import WorkflowDiagramResolvedExport as WorkflowDiagramResolvedExport
+from .models import WorkflowDiagramRunResult as WorkflowDiagramRunResult
+from .models import WorkflowDiagramSpec as WorkflowDiagramSpec
+from .models import _NormalizedNodeResult as _NormalizedNodeResult
 
 
 class WorkflowDiagramService:
@@ -208,87 +83,7 @@ class WorkflowDiagramService:
         return ordered
 
     def dependencies(self, spec: WorkflowDiagramSpec) -> dict[str, set[str]]:
-        """Compile the rover-style `sequence` block into dependency sets."""
-        dependencies: dict[str, set[str]] = {}
-        declared_nodes = set(spec.nodes)
-        current_sources: list[str] = []
-
-        def ensure_node(node_id: str) -> None:
-            dependencies.setdefault(node_id, set())
-
-        def register_target(target_text: str) -> list[str]:
-            target_text = target_text.strip()
-            if target_text.startswith("else=>"):
-                target_text = target_text.removeprefix("else=>").strip()
-            if " ? when:" in target_text:
-                target_text = target_text.split(" ? when:", maxsplit=1)[0].strip()
-            if target_text.startswith("(") and target_text.endswith(")"):
-                targets = [
-                    item.strip()
-                    for item in target_text[1:-1].split("|")
-                    if item.strip()
-                ]
-                for node_id in targets:
-                    ensure_node(node_id)
-                    dependencies[node_id].update(current_sources)
-                return targets
-            ensure_node(target_text)
-            dependencies[target_text].update(current_sources)
-            return [target_text]
-
-        for raw_line in spec.sequence.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            if line.startswith("[") and "]=>" in line:
-                match = re.match(r"^\[(?P<sources>[^\]]+)\]=>\s*(?P<target>.+)$", line)
-                if not match:
-                    raise ValueError(
-                        f"Invalid workflow join line in `{spec.name}`: {raw_line}"
-                    )
-                join_sources = [
-                    item.strip()
-                    for item in match.group("sources").split(",")
-                    if item.strip()
-                ]
-                target = match.group("target").strip()
-                ensure_node(target)
-                dependencies[target].update(join_sources)
-                current_sources = [target]
-                continue
-            if "--->" in line and not line.startswith("--->"):
-                segments = [
-                    segment.strip() for segment in line.split("--->") if segment.strip()
-                ]
-                current_sources = [segments[0]]
-                ensure_node(segments[0])
-                for segment in segments[1:]:
-                    current_sources = register_target(segment)
-                continue
-            if line.startswith("--->"):
-                if not current_sources:
-                    raise ValueError(
-                        f"Workflow arrow in `{spec.name}` has no current source: {raw_line}"
-                    )
-                current_sources = register_target(line.removeprefix("--->").strip())
-                continue
-            current_sources = [line]
-            ensure_node(line)
-
-        dependencies.setdefault(spec.entrypoint, set())
-        unknown_nodes = [
-            node_id
-            for node_id in dependencies
-            if declared_nodes and node_id not in declared_nodes
-        ]
-        if unknown_nodes:
-            missing = ", ".join(sorted(unknown_nodes))
-            raise ValueError(
-                f"Workflow diagram `{spec.name}` references undeclared node(s): {missing}"
-            )
-        for node_id in declared_nodes:
-            dependencies.setdefault(node_id, set())
-        return dependencies
+        return dependencies(spec)
 
     def execute(
         self,
@@ -504,50 +299,9 @@ class WorkflowDiagramService:
             )
             return effective_inputs, normalized, node_kind, 1
 
-        if policy.max_iterations < 2:
-            raise ValueError(
-                f"Workflow node `{node_spec.label or '<unnamed>'}` declares `{policy.kind}` composition "
-                "but does not allow at least two iterations."
-            )
-
-        current_inputs = dict(effective_inputs)
-        normalized: _NormalizedNodeResult | None = None
-        node_kind = ""
-        notes: list[str] = []
-        for iteration in range(1, policy.max_iterations + 1):
-            if iteration > 1 and policy.iteration_input:
-                current_inputs[policy.iteration_input] = (
-                    normalized.output if normalized is not None else {}
-                )
-            normalized, node_kind = invoke(current_inputs)
-            notes.append(f"Completed {policy.kind} iteration {iteration}.")
-            if policy.exit_when and self._resolve_iteration_exit(
-                policy.exit_when, normalized.output
-            ):
-                notes.append(
-                    f"Exited {policy.kind} loop because `{policy.exit_when}` became truthy."
-                )
-                normalized = self._merge_policy_output(
-                    policy=policy,
-                    normalized=_NormalizedNodeResult(
-                        output=normalized.output, notes=[*normalized.notes, *notes]
-                    ),
-                    policy_inputs=policy_inputs,
-                )
-                return current_inputs, normalized, node_kind, iteration
-        if normalized is None:
-            raise RuntimeError(
-                f"Workflow node `{node_spec.label or '<unnamed>'}` completed no "
-                "iterations."
-            )
-        normalized = self._merge_policy_output(
-            policy=policy,
-            normalized=_NormalizedNodeResult(
-                output=normalized.output, notes=[*normalized.notes, *notes]
-            ),
-            policy_inputs=policy_inputs,
+        return self._execute_refinement(
+            node_spec, policy, effective_inputs, policy_inputs, invoke
         )
-        return current_inputs, normalized, node_kind, policy.max_iterations
 
     def _resolve_declared_exports(
         self,
@@ -685,57 +439,7 @@ class WorkflowDiagramService:
                 continue
             downstream = sorted(outgoing.get(node_id, set()))
             upstream = sorted(dependencies.get(node_id, set()))
-            if policy.kind == "sequence":
-                continue
-            if policy.kind == "branch":
-                branch_targets = policy.branch_targets or downstream
-                self._ensure_known_nodes(
-                    spec=spec,
-                    node_id=node_id,
-                    target_ids=branch_targets,
-                    label="branch targets",
-                )
-                if len(branch_targets) < 2:
-                    raise ValueError(
-                        f"Workflow node `{node_id}` must branch to at least two targets."
-                    )
-                continue
-            if policy.kind in {"loop", "refinement"}:
-                if policy.max_iterations < 2:
-                    raise ValueError(
-                        f"Workflow node `{node_id}` must allow at least two iterations for `{policy.kind}`."
-                    )
-                continue
-            if policy.kind == "delegation":
-                delegate_to = policy.delegate_to or downstream
-                self._ensure_known_nodes(
-                    spec=spec,
-                    node_id=node_id,
-                    target_ids=delegate_to,
-                    label="delegation targets",
-                )
-                if not delegate_to:
-                    raise ValueError(
-                        f"Workflow node `{node_id}` declares delegation without any delegate targets."
-                    )
-                continue
-            if policy.kind in {"aggregation", "contradiction-resolution"}:
-                sources = policy.aggregation_sources or upstream
-                self._ensure_known_nodes(
-                    spec=spec,
-                    node_id=node_id,
-                    target_ids=sources,
-                    label="aggregation sources",
-                )
-                if len(sources) < 2:
-                    raise ValueError(
-                        f"Workflow node `{node_id}` requires at least two upstream sources for `{policy.kind}`."
-                    )
-                continue
-            if policy.kind == "judge" and not upstream:
-                raise ValueError(
-                    f"Workflow node `{node_id}` cannot act as a judge without any upstream evidence."
-                )
+            self._validate_node_policy(spec, node_id, policy, downstream, upstream)
 
     def _outgoing_edges(self, dependencies: dict[str, set[str]]) -> dict[str, set[str]]:
         outgoing = {node_id: set() for node_id in dependencies}
@@ -787,30 +491,14 @@ class WorkflowDiagramService:
                 for target, requirements in dependencies.items()
                 if source_id in requirements
             )
-            if source_policy.kind == "branch":
-                branch_targets = source_policy.branch_targets or outgoing_targets
-                if node_id in branch_targets:
-                    selected_targets = source_result.output.get("selected_targets", [])
-                    if (
-                        isinstance(selected_targets, list)
-                        and node_id not in selected_targets
-                    ):
-                        explicit_skip_reasons.append(
-                            f"Skipped because branch node `{source_id}` routed away from `{node_id}`."
-                        )
-            if source_policy.kind == "delegation":
-                delegate_targets = source_policy.delegate_to or outgoing_targets
-                if node_id in delegate_targets:
-                    delegated_targets = source_result.output.get(
-                        "delegated_targets", []
-                    )
-                    if (
-                        isinstance(delegated_targets, list)
-                        and node_id not in delegated_targets
-                    ):
-                        explicit_skip_reasons.append(
-                            f"Skipped because delegation node `{source_id}` did not activate `{node_id}`."
-                        )
+            self._collect_policy_skip_reasons(
+                source_policy,
+                outgoing_targets,
+                node_id,
+                source_result,
+                source_id,
+                explicit_skip_reasons,
+            )
         if explicit_skip_reasons:
             return explicit_skip_reasons[0]
         if direct_sources and all(
@@ -1237,3 +925,151 @@ class WorkflowDiagramService:
             "conflicts": conflicts,
             "candidates": source_packets,
         }
+
+    def _execute_refinement(
+        self,
+        node_spec: WorkflowDiagramNodeSpec,
+        policy: WorkflowCompositionPolicySpec,
+        effective_inputs: dict[str, Any],
+        policy_inputs: dict[str, Any],
+        invoke: Callable[[dict[str, Any]], tuple[_NormalizedNodeResult, str]],
+    ) -> tuple[dict[str, Any], _NormalizedNodeResult, str, int]:
+        if policy.max_iterations < 2:
+            raise ValueError(
+                f"Workflow node `{node_spec.label or '<unnamed>'}` declares `{policy.kind}` composition "
+                "but does not allow at least two iterations."
+            )
+
+        current_inputs = dict(effective_inputs)
+        normalized: _NormalizedNodeResult | None = None
+        node_kind = ""
+        notes: list[str] = []
+        for iteration in range(1, policy.max_iterations + 1):
+            if iteration > 1 and policy.iteration_input:
+                current_inputs[policy.iteration_input] = (
+                    normalized.output if normalized is not None else {}
+                )
+            normalized, node_kind = invoke(current_inputs)
+            notes.append(f"Completed {policy.kind} iteration {iteration}.")
+            if policy.exit_when and self._resolve_iteration_exit(
+                policy.exit_when, normalized.output
+            ):
+                notes.append(
+                    f"Exited {policy.kind} loop because `{policy.exit_when}` became truthy."
+                )
+                normalized = self._merge_policy_output(
+                    policy=policy,
+                    normalized=_NormalizedNodeResult(
+                        output=normalized.output, notes=[*normalized.notes, *notes]
+                    ),
+                    policy_inputs=policy_inputs,
+                )
+                return current_inputs, normalized, node_kind, iteration
+        if normalized is None:
+            raise RuntimeError(
+                f"Workflow node `{node_spec.label or '<unnamed>'}` completed no "
+                "iterations."
+            )
+        normalized = self._merge_policy_output(
+            policy=policy,
+            normalized=_NormalizedNodeResult(
+                output=normalized.output, notes=[*normalized.notes, *notes]
+            ),
+            policy_inputs=policy_inputs,
+        )
+        return current_inputs, normalized, node_kind, policy.max_iterations
+
+    def _validate_node_policy(
+        self, spec, node_id, policy, downstream, upstream
+    ) -> None:
+        if policy.kind == "sequence":
+            return
+        if policy.kind == "branch":
+            self._validate_branch_policy(spec, node_id, policy, downstream)
+            return
+        if policy.kind in {"loop", "refinement"}:
+            if policy.max_iterations < 2:
+                raise ValueError(
+                    f"Workflow node `{node_id}` must allow at least two iterations for `{policy.kind}`."
+                )
+            return
+        if policy.kind == "delegation":
+            self._validate_delegation_policy(spec, node_id, policy, downstream)
+            return
+        if policy.kind in {"aggregation", "contradiction-resolution"}:
+            sources = policy.aggregation_sources or upstream
+            self._ensure_known_nodes(
+                spec=spec,
+                node_id=node_id,
+                target_ids=sources,
+                label="aggregation sources",
+            )
+            if len(sources) < 2:
+                raise ValueError(
+                    f"Workflow node `{node_id}` requires at least two upstream sources for `{policy.kind}`."
+                )
+            return
+        if policy.kind == "judge" and not upstream:
+            raise ValueError(
+                f"Workflow node `{node_id}` cannot act as a judge without any upstream evidence."
+            )
+
+    def _collect_policy_skip_reasons(
+        self,
+        source_policy,
+        outgoing_targets,
+        node_id,
+        source_result,
+        source_id,
+        explicit_skip_reasons,
+    ) -> None:
+        if source_policy.kind == "branch":
+            branch_targets = source_policy.branch_targets or outgoing_targets
+            if node_id in branch_targets:
+                selected_targets = source_result.output.get("selected_targets", [])
+                if (
+                    isinstance(selected_targets, list)
+                    and node_id not in selected_targets
+                ):
+                    explicit_skip_reasons.append(
+                        f"Skipped because branch node `{source_id}` routed away from `{node_id}`."
+                    )
+        if source_policy.kind == "delegation":
+            delegate_targets = source_policy.delegate_to or outgoing_targets
+            if node_id in delegate_targets:
+                delegated_targets = source_result.output.get("delegated_targets", [])
+                if (
+                    isinstance(delegated_targets, list)
+                    and node_id not in delegated_targets
+                ):
+                    explicit_skip_reasons.append(
+                        f"Skipped because delegation node `{source_id}` did not activate `{node_id}`."
+                    )
+
+    def _validate_branch_policy(self, spec, node_id, policy, downstream) -> None:
+        branch_targets = policy.branch_targets or downstream
+        self._ensure_known_nodes(
+            spec=spec,
+            node_id=node_id,
+            target_ids=branch_targets,
+            label="branch targets",
+        )
+        if len(branch_targets) < 2:
+            raise ValueError(
+                f"Workflow node `{node_id}` must branch to at least two targets."
+            )
+        return
+
+    def _validate_delegation_policy(self, spec, node_id, policy, downstream) -> None:
+        delegate_to = policy.delegate_to or downstream
+        self._ensure_known_nodes(
+            spec=spec,
+            node_id=node_id,
+            target_ids=delegate_to,
+            label="delegation targets",
+        )
+        if not delegate_to:
+            raise ValueError(
+                f"Workflow node `{node_id}` declares delegation without any delegate targets."
+            )
+        return
